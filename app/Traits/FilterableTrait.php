@@ -25,6 +25,9 @@ trait FilterableTrait
                 $this->applySingleFilter($q, $request, 'satisfaction_survey', true);
                 $this->applySingleFilter($q, $request, 'warranty_sent', true);
                 $this->applySingleFilter($q, $request, 'rpt', true);
+                $this->applySingleFilter($q, $request, 'ad_name', true);
+                $this->applySingleFilter($q, $request, 'adset_name', true);
+                $this->applySingleFilter($q, $request, 'campaign_name', true);
                 $this->applySingleFilter($q, $request, 'created_at', true);
                 $this->applySingleFilter($q, $request, 'updated_at', true);
             });
@@ -39,6 +42,9 @@ trait FilterableTrait
             $this->applyBooleanFilter($query, $request, 'satisfaction_survey');
             $this->applyBooleanFilter($query, $request, 'warranty_sent');
             $this->applyBooleanFilter($query, $request, 'rpt');
+            $this->applyTextFilter($query, $request, 'ad_name');
+            $this->applyTextFilter($query, $request, 'adset_name');
+            $this->applyTextFilter($query, $request, 'campaign_name');
             $this->applyDateFilter($query, $request, 'created_at');
             $this->applyDateFilter($query, $request, 'updated_at');
         }
@@ -101,6 +107,11 @@ trait FilterableTrait
             case 'warranty_sent':
             case 'rpt':
                 $this->applyBooleanFilter($query, $request, $field);
+                break;
+            case 'ad_name':
+            case 'adset_name':
+            case 'campaign_name':
+                $this->applyTextFilter($query, $request, $field);
                 break;
             case 'created_at':
             case 'updated_at':
@@ -218,6 +229,20 @@ trait FilterableTrait
                 } else {
                     $query->where($field, $value);
                 }
+            }
+        }
+    }
+
+    protected function applyTextFilter(Builder $query, Request $request, string $field): void
+    {
+        if ($request->has($field) && !empty($request->{$field})) {
+            $operator = $request->input("{$field}_operator", 'contains');
+            $value = trim($request->input($field));
+
+            if ($operator === 'contains') {
+                $query->where($field, 'like', '%' . $value . '%');
+            } elseif ($operator === 'eq') {
+                $query->where($field, '=', $value);
             }
         }
     }
