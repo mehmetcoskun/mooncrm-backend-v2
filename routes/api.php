@@ -5,13 +5,12 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerFileController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DoctorController;
-use App\Http\Controllers\MetaWebhookController;
+use App\Http\Controllers\HotelController;
+use App\Http\Controllers\LeadWebhookController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\EmailTemplateController;
-use App\Http\Controllers\PartnerHotelController;
-use App\Http\Controllers\PartnerTransferController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RoleController;
@@ -23,6 +22,7 @@ use App\Http\Controllers\SmsController;
 use App\Http\Controllers\SmsTemplateController;
 use App\Http\Controllers\StatusController;
 use App\Http\Controllers\TagController;
+use App\Http\Controllers\TransferController;
 use App\Http\Controllers\TwoFactorAuthController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VapiController;
@@ -30,13 +30,12 @@ use App\Http\Controllers\WebFormController;
 use App\Http\Controllers\WhatsappSessionController;
 use App\Http\Controllers\WhatsappTemplateController;
 use App\Http\Controllers\AppointmentController;
-use App\Http\Controllers\WorkScheduleController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/two-factor/verify', [TwoFactorAuthController::class, 'verify']);
 
-Route::prefix('/meta')->controller(MetaWebhookController::class)->group(function () {
+Route::prefix('/meta')->controller(LeadWebhookController::class)->group(function () {
     Route::get('/webhook', 'verify');
     Route::post('/webhook', 'webhook');
 });
@@ -226,24 +225,19 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{doctor}', 'destroy');
     });
 
-    Route::prefix('/partner-hotel')->controller(PartnerHotelController::class)->group(function () {
+    Route::prefix('/hotel')->controller(HotelController::class)->group(function () {
         Route::get('/', 'index');
         Route::post('/', 'store');
-        Route::put('/{partnerHotel}', 'update');
-        Route::delete('/{partnerHotel}', 'destroy');
+        Route::put('/{hotel}', 'update');
+        Route::delete('/{hotel}', 'destroy');
     });
 
-    Route::prefix('/partner-transfer')->controller(PartnerTransferController::class)->group(function () {
+    Route::prefix('/transfer')->controller(TransferController::class)->group(function () {
         Route::get('/', 'index');
         Route::post('/', 'store');
-        Route::put('/{partnerTransfer}', 'update');
-        Route::delete('/{partnerTransfer}', 'destroy');
+        Route::put('/{transfer}', 'update');
+        Route::delete('/{transfer}', 'destroy');
     });
 
     Route::get('/appointment', [AppointmentController::class, 'getAppointments']);
-
-    Route::prefix('/work-schedule')->controller(WorkScheduleController::class)->group(function () {
-        Route::get('/', 'index');
-        Route::get('/working-status', 'getWorkingStatus');
-    });
 });

@@ -118,9 +118,6 @@ class DatabaseSeeder extends Seeder
             ['title' => 'Kullanıcı', 'slug' => 'user_ApiKeyCreate', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Kullanıcı', 'slug' => 'user_ApiKeyDelete', 'is_custom' => false, 'is_global' => true],
 
-            // Mesai Takip
-            ['title' => 'Mesai Takip', 'slug' => 'work_schedule_Access', 'is_custom' => false, 'is_global' => true],
-
             // Rol
             ['title' => 'Rol', 'slug' => 'role_Access', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Rol', 'slug' => 'role_Create', 'is_custom' => false, 'is_global' => true],
@@ -163,17 +160,17 @@ class DatabaseSeeder extends Seeder
             ['title' => 'Doktor', 'slug' => 'doctor_Edit', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Doktor', 'slug' => 'doctor_Delete', 'is_custom' => false, 'is_global' => true],
 
-            // Anlaşmalı Otel
-            ['title' => 'Anlaşmalı Otel', 'slug' => 'partner_hotel_Access', 'is_custom' => false, 'is_global' => true],
-            ['title' => 'Anlaşmalı Otel', 'slug' => 'partner_hotel_Create', 'is_custom' => false, 'is_global' => true],
-            ['title' => 'Anlaşmalı Otel', 'slug' => 'partner_hotel_Edit', 'is_custom' => false, 'is_global' => true],
-            ['title' => 'Anlaşmalı Otel', 'slug' => 'partner_hotel_Delete', 'is_custom' => false, 'is_global' => true],
+            // Otel
+            ['title' => 'Otel', 'slug' => 'hotel_Access', 'is_custom' => false, 'is_global' => true],
+            ['title' => 'Otel', 'slug' => 'hotel_Create', 'is_custom' => false, 'is_global' => true],
+            ['title' => 'Otel', 'slug' => 'hotel_Edit', 'is_custom' => false, 'is_global' => true],
+            ['title' => 'Otel', 'slug' => 'hotel_Delete', 'is_custom' => false, 'is_global' => true],
 
-            // Anlaşmalı Transfer
-            ['title' => 'Anlaşmalı Transfer', 'slug' => 'partner_transfer_Access', 'is_custom' => false, 'is_global' => true],
-            ['title' => 'Anlaşmalı Transfer', 'slug' => 'partner_transfer_Create', 'is_custom' => false, 'is_global' => true],
-            ['title' => 'Anlaşmalı Transfer', 'slug' => 'partner_transfer_Edit', 'is_custom' => false, 'is_global' => true],
-            ['title' => 'Anlaşmalı Transfer', 'slug' => 'partner_transfer_Delete', 'is_custom' => false, 'is_global' => true],
+            // Transfer
+            ['title' => 'Transfer', 'slug' => 'transfer_Access', 'is_custom' => false, 'is_global' => true],
+            ['title' => 'Transfer', 'slug' => 'transfer_Create', 'is_custom' => false, 'is_global' => true],
+            ['title' => 'Transfer', 'slug' => 'transfer_Edit', 'is_custom' => false, 'is_global' => true],
+            ['title' => 'Transfer', 'slug' => 'transfer_Delete', 'is_custom' => false, 'is_global' => true],
 
             // Randevu
             ['title' => 'Randevu', 'slug' => 'appointment_Access', 'is_custom' => false, 'is_global' => true],
@@ -192,7 +189,6 @@ class DatabaseSeeder extends Seeder
             ['title' => 'Ayarlar', 'slug' => 'setting_SalesNotification', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Ayarlar', 'slug' => 'setting_LeadAssignment', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Ayarlar', 'slug' => 'setting_WelcomeMessage', 'is_custom' => false, 'is_global' => true],
-            ['title' => 'Ayarlar', 'slug' => 'setting_Zapier', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Ayarlar', 'slug' => 'setting_Vapi', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Ayarlar', 'slug' => 'setting_UserNotification', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Ayarlar', 'slug' => 'setting_Facebook', 'is_custom' => false, 'is_global' => true],

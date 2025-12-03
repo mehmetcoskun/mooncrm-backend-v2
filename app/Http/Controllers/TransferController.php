@@ -2,51 +2,51 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\PartnerHotel;
+use App\Models\Transfer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
-class PartnerHotelController extends Controller
+class TransferController extends Controller
 {
     public function index(Request $request)
     {
-        if (Gate::none(['partner_hotel_Access', 'customer_Access']))
+        if (Gate::none(['transfer_Access', 'customer_Access']))
             return response()->json(['message' => 'Unauthorized'], 403);
 
         $organizationId = auth()->user()->organization_id ?? $request->header('X-Organization-Id');
 
-        $partnerHotels = PartnerHotel::where('organization_id', $organizationId);
+        $transfers = Transfer::where('organization_id', $organizationId);
 
-        return $partnerHotels->orderBy('name', 'asc')->get();
+        return $transfers->orderBy('name', 'asc')->get();
     }
 
     public function store(Request $request)
     {
-        if (Gate::none(['partner_hotel_Create']))
+        if (Gate::none(['transfer_Create']))
             return response()->json(['message' => 'Unauthorized'], 403);
 
         $data = $request->all();
 
         $data['organization_id'] = auth()->user()->organization_id ?? $request->header('X-Organization-Id');
 
-        return PartnerHotel::create($data);
+        return Transfer::create($data);
     }
 
-    public function update(Request $request, PartnerHotel $partnerHotel)
+    public function update(Request $request, Transfer $transfer)
     {
-        if (Gate::none(['partner_hotel_Edit']))
+        if (Gate::none(['transfer_Edit']))
             return response()->json(['message' => 'Unauthorized'], 403);
 
-        $partnerHotel->update($request->all());
+        $transfer->update($request->all());
 
-        return response()->json($partnerHotel);
+        return response()->json($transfer);
     }
 
-    public function destroy(PartnerHotel $partnerHotel)
+    public function destroy(Transfer $transfer)
     {
-        if (Gate::none(['partner_hotel_Delete']))
+        if (Gate::none(['transfer_Delete']))
             return response()->json(['message' => 'Unauthorized'], 403);
 
-        return $partnerHotel->delete();
+        return $transfer->delete();
     }
 }
