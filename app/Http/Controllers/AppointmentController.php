@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\Doctor;
-use App\Models\PartnerHotel;
-use App\Models\PartnerTransfer;
+use App\Models\Hotel;
+use App\Models\Transfer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Carbon\Carbon;
@@ -63,11 +63,11 @@ class AppointmentController extends Controller
                     if (isset($travel['doctor_id'])) {
                         $doctorIds[] = $travel['doctor_id'];
                     }
-                    if (isset($travel['partner_hotel_id'])) {
-                        $hotelIds[] = $travel['partner_hotel_id'];
+                    if (isset($travel['hotel_id'])) {
+                        $hotelIds[] = $travel['hotel_id'];
                     }
-                    if (isset($travel['partner_transfer_id'])) {
-                        $transferIds[] = $travel['partner_transfer_id'];
+                    if (isset($travel['transfer_id'])) {
+                        $transferIds[] = $travel['transfer_id'];
                     }
                 }
             }
@@ -82,11 +82,11 @@ class AppointmentController extends Controller
         }
 
         if (!empty($hotelIds)) {
-            $hotels = PartnerHotel::whereIn('id', array_unique($hotelIds))->get()->keyBy('id');
+            $hotels = Hotel::whereIn('id', array_unique($hotelIds))->get()->keyBy('id');
         }
 
         if (!empty($transferIds)) {
-            $transfers = PartnerTransfer::whereIn('id', array_unique($transferIds))->get()->keyBy('id');
+            $transfers = Transfer::whereIn('id', array_unique($transferIds))->get()->keyBy('id');
         }
 
         $finalResults = [];
@@ -112,12 +112,12 @@ class AppointmentController extends Controller
                         $travel['doctor'] = $doctors[$travel['doctor_id']]->toArray();
                     }
 
-                    if (isset($travel['partner_hotel_id']) && isset($hotels[$travel['partner_hotel_id']])) {
-                        $travel['partner_hotel'] = $hotels[$travel['partner_hotel_id']]->toArray();
+                    if (isset($travel['hotel_id']) && isset($hotels[$travel['hotel_id']])) {
+                        $travel['hotel'] = $hotels[$travel['hotel_id']]->toArray();
                     }
 
-                    if (isset($travel['partner_transfer_id']) && isset($transfers[$travel['partner_transfer_id']])) {
-                        $travel['partner_transfer'] = $transfers[$travel['partner_transfer_id']]->toArray();
+                    if (isset($travel['transfer_id']) && isset($transfers[$travel['transfer_id']])) {
+                        $travel['transfer'] = $transfers[$travel['transfer_id']]->toArray();
                     }
 
                     $customerCopy = clone $customer;

@@ -5,12 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\Customer;
 use App\Models\CustomerLog;
 use App\Models\Category;
+use App\Models\Hotel;
 use App\Models\Organization;
-use App\Models\PartnerHotel;
-use App\Models\PartnerTransfer;
 use App\Models\Segment;
 use App\Models\Setting;
 use App\Models\Tag;
+use App\Models\Transfer;
 use App\Models\User;
 use App\Models\WhatsappSession;
 use App\Traits\FilterableTrait;
@@ -259,7 +259,7 @@ class CustomerController extends Controller
                     $this->sendHotelEmail($customer, 9);
                 }
 
-                if (isset($lastTravelInfo['partner_transfer_id']) && !empty($lastTravelInfo['partner_transfer_id'])) {
+                if (isset($lastTravelInfo['transfer_id']) && !empty($lastTravelInfo['transfer_id'])) {
                     $this->sendTransferMessage($customer, 9);
                 }
             } else if (isset($data['status_id']) && $data['status_id'] == 8) {
@@ -308,7 +308,7 @@ class CustomerController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
 
         $ids = $request->input('ids', []);
-        
+
         if (empty($ids) || !is_array($ids)) {
             return response()->json(['message' => 'Geçersiz ID listesi'], 400);
         }
@@ -332,7 +332,7 @@ class CustomerController extends Controller
 
         $ids = $request->input('ids', []);
         $statusId = $request->input('status_id');
-        
+
         if (empty($ids) || !is_array($ids) || !$statusId) {
             return response()->json(['message' => 'Geçersiz parametreler'], 400);
         }
@@ -356,7 +356,7 @@ class CustomerController extends Controller
 
         $ids = $request->input('ids', []);
         $categoryId = $request->input('category_id');
-        
+
         if (empty($ids) || !is_array($ids) || !$categoryId) {
             return response()->json(['message' => 'Geçersiz parametreler'], 400);
         }
@@ -380,7 +380,7 @@ class CustomerController extends Controller
 
         $ids = $request->input('ids', []);
         $userId = $request->input('user_id');
-        
+
         if (empty($ids) || !is_array($ids) || !$userId) {
             return response()->json(['message' => 'Geçersiz parametreler'], 400);
         }
@@ -1152,11 +1152,11 @@ class CustomerController extends Controller
         }
 
         $messageTemplate = $notificationSettings['message_template'];
-        
+
         $categoryName = $customer->category ? $customer->category->title : '-';
         $dateTime = Carbon::parse($customer->created_at)->format('d.m.Y H:i');
         $note = $customer->notes ?? '-';
-        
+
         $message = str_replace(
             ['{customer_name}', '{customer_phone}', '{customer_id}', '{category_name}', '{date_time}', '{note}'],
             [$customer->name, $customer->phone, $customer->id, $categoryName, $dateTime, $note],
@@ -1237,14 +1237,14 @@ class CustomerController extends Controller
         $serviceNames = $customer->services->pluck('title')->implode(', ');
         $serviceName = $serviceNames ?: '';
 
-        $partnerHotel = null;
+        $hotel = null;
         $hotelName = '';
         if ($travelInfo) {
             if ($travelInfo['is_custom_hotel'] && !empty($travelInfo['hotel_name'])) {
                 $hotelName = $travelInfo['hotel_name'];
-            } else if (isset($travelInfo['partner_hotel_id'])) {
-                $partnerHotel = PartnerHotel::find($travelInfo['partner_hotel_id']);
-                $hotelName = $partnerHotel ? $partnerHotel->name : '';
+            } else if (isset($travelInfo['hotel_id'])) {
+                $hotel = Hotel::find($travelInfo['hotel_id']);
+                $hotelName = $hotel ? $hotel->name : '';
             }
         }
 
@@ -1288,8 +1288,8 @@ class CustomerController extends Controller
             return;
         }
 
-        $partnerHotel = PartnerHotel::find($lastTravelInfo['partner_hotel_id']);
-        if (!$partnerHotel || empty($partnerHotel->chat_id) || empty($partnerHotel->message_templates)) {
+        $hotel = Hotel::find($lastTravelInfo['hotel_id']);
+        if (!$hotel || empty($hotel->chat_id) || empty($hotel->message_templates)) {
             return;
         }
 
@@ -1306,7 +1306,7 @@ class CustomerController extends Controller
             return;
         }
 
-        $messageTemplates = $partnerHotel->message_templates;
+        $messageTemplates = $hotel->message_templates;
         $templateKey = $statusId == 8 ? 'sale' : 'cancel';
 
         if (empty($messageTemplates[$templateKey])) {
@@ -1342,7 +1342,7 @@ class CustomerController extends Controller
             Http::withHeaders([
                 'X-Api-Key' => $settings->whatsapp_settings['api_key']
             ])->post($settings->whatsapp_settings['api_url'] . '/sendText', [
-                'chatId' => $partnerHotel->chat_id,
+                'chatId' => $hotel->chat_id,
                 'text' => $message,
                 'session' => $adminSession->title
             ]);
@@ -1359,8 +1359,8 @@ class CustomerController extends Controller
             return;
         }
 
-        $partnerHotel = PartnerHotel::find($lastTravelInfo['partner_hotel_id']);
-        if (!$partnerHotel || empty($partnerHotel->email) || empty($partnerHotel->message_templates)) {
+        $hotel = Hotel::find($lastTravelInfo['hotel_id']);
+        if (!$hotel || empty($hotel->email) || empty($hotel->message_templates)) {
             return;
         }
 
@@ -1369,7 +1369,7 @@ class CustomerController extends Controller
             return;
         }
 
-        $messageTemplates = $partnerHotel->message_templates;
+        $messageTemplates = $hotel->message_templates;
         $templateKey = $statusId == 8 ? 'sale' : 'cancel';
 
         if (empty($messageTemplates[$templateKey])) {
@@ -1419,7 +1419,7 @@ class CustomerController extends Controller
 
         $email = (new Email())
             ->from(new Address($smtpSettings['smtp_username'], $smtpSettings['smtp_from_name']))
-            ->to(new Address($partnerHotel->email, $partnerHotel->name))
+            ->to(new Address($hotel->email, $hotel->name))
             ->subject($subject)
             ->html(nl2br($emailContent));
 
@@ -1494,8 +1494,8 @@ class CustomerController extends Controller
             return;
         }
 
-        $partnerTransfer = PartnerTransfer::find($lastTravelInfo['partner_transfer_id']);
-        if (!$partnerTransfer || empty($partnerTransfer->chat_id) || empty($partnerTransfer->message_templates)) {
+        $transfer = Transfer::find($lastTravelInfo['transfer_id']);
+        if (!$transfer || empty($transfer->chat_id) || empty($transfer->message_templates)) {
             return;
         }
 
@@ -1512,7 +1512,7 @@ class CustomerController extends Controller
             return;
         }
 
-        $messageTemplates = $partnerTransfer->message_templates;
+        $messageTemplates = $transfer->message_templates;
         $templateKey = $statusId == 8 ? 'reservation' : 'cancel';
 
         if (empty($messageTemplates[$templateKey])) {
@@ -1536,9 +1536,9 @@ class CustomerController extends Controller
         if ($travelInfoLast) {
             if ($travelInfoLast['is_custom_hotel'] && !empty($travelInfoLast['hotel_name'])) {
                 $hotelName = $travelInfoLast['hotel_name'];
-            } else if (isset($travelInfoLast['partner_hotel_id'])) {
-                $partnerHotel = PartnerHotel::find($travelInfoLast['partner_hotel_id']);
-                $hotelName = $partnerHotel ? $partnerHotel->name : '';
+            } else if (isset($travelInfoLast['hotel_id'])) {
+                $hotel = Hotel::find($travelInfoLast['hotel_id']);
+                $hotelName = $hotel ? $hotel->name : '';
             }
         }
 
@@ -1576,7 +1576,7 @@ class CustomerController extends Controller
             Http::withHeaders([
                 'X-Api-Key' => $settings->whatsapp_settings['api_key']
             ])->post($settings->whatsapp_settings['api_url'] . '/sendText', [
-                'chatId' => $partnerTransfer->chat_id,
+                'chatId' => $transfer->chat_id,
                 'text' => $message,
                 'session' => $adminSession->title
             ]);
