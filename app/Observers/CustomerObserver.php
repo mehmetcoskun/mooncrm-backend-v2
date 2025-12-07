@@ -6,8 +6,6 @@ use App\Models\Category;
 use App\Models\Customer;
 use App\Models\CustomerLog;
 use App\Models\Organization;
-use App\Models\Hotel;
-use App\Models\Service;
 use App\Models\Status;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
@@ -85,12 +83,6 @@ class CustomerObserver
                     $newStatus = Status::find($newValue);
                     $logData['old_value'] = $oldStatus ? json_encode($oldStatus) : null;
                     $logData['new_value'] = $newStatus ? json_encode($newStatus) : null;
-                    break;
-                case 'hotel_id':
-                    $oldHotel = Hotel::find($oldValue);
-                    $newHotel = Hotel::find($newValue);
-                    $logData['old_value'] = $oldHotel ? json_encode($oldHotel) : null;
-                    $logData['new_value'] = $newHotel ? json_encode($newHotel) : null;
                     break;
                 case 'phone_calls':
                 case 'reminder':
