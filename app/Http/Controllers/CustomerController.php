@@ -254,7 +254,7 @@ class CustomerController extends Controller
 
         if ($lastTravelInfo) {
             if (isset($data['status_id']) && $data['status_id'] == 9) {
-                if (!$lastTravelInfo['is_custom_hotel'] && isset($lastTravelInfo['partner_hotel_id']) && !empty($lastTravelInfo['partner_hotel_id'])) {
+                if (!$lastTravelInfo['is_custom_hotel'] && isset($lastTravelInfo['hotel_id']) && !empty($lastTravelInfo['hotel_id'])) {
                     $this->sendHotelMessage($customer, statusId: 9);
                     $this->sendHotelEmail($customer, 9);
                 }
@@ -273,12 +273,12 @@ class CustomerController extends Controller
                 if ($hasTravelInfo && !empty($newRoomType) && (($oldRoomType != $newRoomType) || ($oldTravelInfo != $customer->travel_info) || ($oldStatusId != $data['status_id']))) {
                     $this->sendConfirmationEmail($customer);
                     $this->sendSalesNotification($customer);
-                    if (!$lastTravelInfo['is_custom_hotel'] && isset($lastTravelInfo['partner_hotel_id']) && !empty($lastTravelInfo['partner_hotel_id'])) {
+                    if (!$lastTravelInfo['is_custom_hotel'] && isset($lastTravelInfo['hotel_id']) && !empty($lastTravelInfo['hotel_id'])) {
                         $this->sendHotelMessage($customer, 8);
                         $this->sendHotelEmail($customer, 8);
                     }
 
-                    if (isset($lastTravelInfo['partner_transfer_id']) && !empty($lastTravelInfo['partner_transfer_id'])) {
+                    if (isset($lastTravelInfo['transfer_id']) && !empty($lastTravelInfo['transfer_id'])) {
                         $this->sendTransferMessage($customer, 8);
                     }
                 }
@@ -1284,7 +1284,7 @@ class CustomerController extends Controller
         $lastTravelInfo = $customer->travel_info && is_array($customer->travel_info) && count($customer->travel_info) > 0 ?
             $customer->travel_info[count($customer->travel_info) - 1] : null;
 
-        if (!$lastTravelInfo || $lastTravelInfo['is_custom_hotel'] || !isset($lastTravelInfo['partner_hotel_id']) || empty($lastTravelInfo['partner_hotel_id'])) {
+        if (!$lastTravelInfo || $lastTravelInfo['is_custom_hotel'] || !isset($lastTravelInfo['hotel_id']) || empty($lastTravelInfo['hotel_id'])) {
             return;
         }
 
@@ -1355,7 +1355,7 @@ class CustomerController extends Controller
         $lastTravelInfo = $customer->travel_info && is_array($customer->travel_info) && count($customer->travel_info) > 0 ?
             $customer->travel_info[count($customer->travel_info) - 1] : null;
 
-        if (!$lastTravelInfo || $lastTravelInfo['is_custom_hotel'] || !isset($lastTravelInfo['partner_hotel_id']) || empty($lastTravelInfo['partner_hotel_id'])) {
+        if (!$lastTravelInfo || $lastTravelInfo['is_custom_hotel'] || !isset($lastTravelInfo['hotel_id']) || empty($lastTravelInfo['hotel_id'])) {
             return;
         }
 
@@ -1490,7 +1490,7 @@ class CustomerController extends Controller
         $lastTravelInfo = $customer->travel_info && is_array($customer->travel_info) && count($customer->travel_info) > 0 ?
             $customer->travel_info[count($customer->travel_info) - 1] : null;
 
-        if (!$lastTravelInfo || !isset($lastTravelInfo['partner_transfer_id']) || empty($lastTravelInfo['partner_transfer_id'])) {
+        if (!$lastTravelInfo || !isset($lastTravelInfo['transfer_id']) || empty($lastTravelInfo['transfer_id'])) {
             return;
         }
 
