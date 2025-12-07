@@ -9,15 +9,15 @@ use Illuminate\Console\Command;
 class AdjustCustomerDatetime extends Command
 {
     protected $signature = 'customers:adjust-datetime {--dry-run : Sadece göster, değiştirme} {--backup : Backup oluştur}';
-    protected $description = '7 Aralık 2025 00:00\'dan itibaren oluşturulan customer\'ların created_at ve updated_at değerlerini 3 saat geri alır';
+    protected $description = '7 Aralık 2025 19:00\'dan sonra oluşturulan customer\'ların created_at ve updated_at değerlerini 3 saat geri alır';
 
     protected $cutoffDate;
 
     public function __construct()
     {
         parent::__construct();
-        // 7 Aralık 2025 00:00
-        $this->cutoffDate = Carbon::create(2025, 12, 7, 0, 0, 0);
+        // 7 Aralık 2025 19:00
+        $this->cutoffDate = Carbon::create(2025, 12, 7, 19, 0, 0);
     }
 
     public function handle()
@@ -35,8 +35,8 @@ class AdjustCustomerDatetime extends Command
             $this->createBackup();
         }
 
-        // 7 Aralık 2025 00:00'dan itibaren oluşturulan customer'ları al
-        $customers = Customer::where('created_at', '>=', $this->cutoffDate)->get();
+        // 7 Aralık 2025 19:00'dan sonra oluşturulan customer'ları al
+        $customers = Customer::where('created_at', '>', $this->cutoffDate)->get();
 
         $this->info("📊 Toplam {$customers->count()} müşteri bulundu.");
         $this->newLine();
@@ -160,7 +160,7 @@ class AdjustCustomerDatetime extends Command
             mkdir(storage_path('app/backups'), 0755, true);
         }
 
-        $customers = Customer::where('created_at', '>=', $this->cutoffDate)
+        $customers = Customer::where('created_at', '>', $this->cutoffDate)
             ->get(['id', 'name', 'created_at', 'updated_at'])
             ->map(function ($customer) {
                 return [
