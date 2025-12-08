@@ -122,7 +122,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('/segment')->controller(SegmentController::class)->group(function () {
         Route::get('/', 'index');
         Route::post('/', 'store');
-        Route::get('/{segment}', 'show');
         Route::put('/{segment}', 'update');
         Route::delete('/{segment}', 'destroy');
         Route::get('/filter/{segment}', 'filter');
@@ -132,7 +131,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('/email')->controller(EmailTemplateController::class)->group(function () {
             Route::get('/', 'index');
             Route::post('/', 'store');
-            Route::get('/{emailTemplate}', 'show');
             Route::put('/{emailTemplate}', 'update');
             Route::delete('/{emailTemplate}', 'destroy');
         });

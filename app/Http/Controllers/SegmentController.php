@@ -59,11 +59,6 @@ class SegmentController extends Controller
         return Segment::create($data)->load('organization');
     }
 
-    public function show(Segment $segment)
-    {
-        return $segment->load('organization');
-    }
-
     public function update(Request $request, Segment $segment)
     {
         if (Gate::none(['segment_Edit']))

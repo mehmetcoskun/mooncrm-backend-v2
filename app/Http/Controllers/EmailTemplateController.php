@@ -39,11 +39,6 @@ class EmailTemplateController extends Controller
         return EmailTemplate::create($data)->load('organization');
     }
 
-    public function show(EmailTemplate $emailTemplate)
-    {
-        return $emailTemplate->load('organization');
-    }
-
     public function update(Request $request, EmailTemplate $emailTemplate)
     {
         if (Gate::none(['email_template_Edit']))
