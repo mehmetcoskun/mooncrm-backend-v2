@@ -11,7 +11,9 @@ trait FilterableTrait
 {
     protected function applyAdvancedFilters(Builder $query, Request $request): Builder
     {
-        $logicalOperator = $request->input('logical_operator', 'and');
+       $logicalOperator = $request->input('logical_operator', 'and');
+        
+        $this->applyUserRoleRestriction($query);
 
         if ($logicalOperator === 'or') {
             $query->where(function($q) use ($request) {
@@ -265,6 +267,21 @@ trait FilterableTrait
                     $query->whereBetween($field, [$start, $end]);
                 }
             }
+        }
+    }
+
+    protected function applyUserRoleRestriction(Builder $query): void
+    {
+        $user = auth()->user();
+
+        if (!$user) {
+            return;
+        }
+
+        $userRoleIds = $user->roles->pluck('id')->toArray();
+
+        if ((in_array(3, $userRoleIds) || in_array(7, $userRoleIds)) && !in_array(1, $userRoleIds) && !in_array(2, $userRoleIds)) {
+            $query->where('user_id', $user->id);
         }
     }
 
