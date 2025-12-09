@@ -30,6 +30,7 @@ trait FilterableTrait
                 $this->applySingleFilter($q, $request, 'ad_name', true);
                 $this->applySingleFilter($q, $request, 'adset_name', true);
                 $this->applySingleFilter($q, $request, 'campaign_name', true);
+                $this->applySingleFilter($q, $request, 'sales_date', true);
                 $this->applySingleFilter($q, $request, 'created_at', true);
                 $this->applySingleFilter($q, $request, 'updated_at', true);
             });
@@ -47,6 +48,7 @@ trait FilterableTrait
             $this->applyTextFilter($query, $request, 'ad_name');
             $this->applyTextFilter($query, $request, 'adset_name');
             $this->applyTextFilter($query, $request, 'campaign_name');
+            $this->applySalesDateFilter($query, $request);
             $this->applyDateFilter($query, $request, 'created_at');
             $this->applyDateFilter($query, $request, 'updated_at');
         }
@@ -114,6 +116,9 @@ trait FilterableTrait
             case 'adset_name':
             case 'campaign_name':
                 $this->applyTextFilter($query, $request, $field);
+                break;
+            case 'sales_date':
+                $this->applySalesDateFilter($query, $request);
                 break;
             case 'created_at':
             case 'updated_at':
@@ -245,6 +250,27 @@ trait FilterableTrait
                 $query->where($field, 'like', '%' . $value . '%');
             } elseif ($operator === 'eq') {
                 $query->where($field, '=', $value);
+            }
+        }
+    }
+
+    protected function applySalesDateFilter(Builder $query, Request $request): void
+    {
+        if ($request->has('sales_date_operator')) {
+            $operator = $request->input('sales_date_operator', 'eq');
+
+            if ($operator === 'eq' && $request->has('sales_date') && !empty($request->sales_date)) {
+                $date = Carbon::parse($request->sales_date)->format('Y-m-d');
+                $query->whereDate('sales_info->sales_date', '=', $date);
+            } elseif ($operator === 'between') {
+                $startDate = $request->input('sales_date_start');
+                $endDate = $request->input('sales_date_end');
+
+                if (!empty($startDate) && !empty($endDate)) {
+                    $start = Carbon::parse($startDate)->format('Y-m-d');
+                    $end = Carbon::parse($endDate)->format('Y-m-d');
+                    $query->whereRaw("DATE(JSON_UNQUOTE(JSON_EXTRACT(sales_info, '$.sales_date'))) BETWEEN ? AND ?", [$start, $end]);
+                }
             }
         }
     }
