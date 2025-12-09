@@ -128,6 +128,10 @@ class CustomerController extends Controller
 
         $data = $request->all();
 
+        if (empty($data['created_at'])) {
+            unset($data['created_at']);
+        }
+
         $data['organization_id'] = $organizationId;
         $data['user_id'] = $data['user_id'] ?? auth()->user()->id;
 
