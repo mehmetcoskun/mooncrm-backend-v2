@@ -96,13 +96,6 @@ class LeadWebhookController extends Controller
                     'lead_form_id' => $formId,
                 ];
 
-                if (!empty($leadData['created_time'])) {
-                    try {
-                        $customerData['created_at'] = Carbon::parse($leadData['created_time']);
-                    } catch (\Throwable $exception) {
-                    }
-                }
-
                 $fieldMappings = $category->field_mappings ?? [];
 
                 foreach ($fieldMappings as $mapping) {
