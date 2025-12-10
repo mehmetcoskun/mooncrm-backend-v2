@@ -20,7 +20,10 @@ class FacebookLeadController extends Controller
         $setting = Setting::where('organization_id', $organizationId)->first();
 
         if (!$setting || !$setting->facebook_settings || !isset($setting->facebook_settings['access_token'])) {
-            return response()->json(['message' => 'Facebook ayarları bulunamadı.'], 400);
+            return response()->json([
+                'data' => [],
+                'paging' => null,
+            ]);
         }
 
         $accessToken = $setting->facebook_settings['access_token'];
