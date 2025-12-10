@@ -5,8 +5,8 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerFileController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DoctorController;
+use App\Http\Controllers\FacebookLeadController;
 use App\Http\Controllers\HotelController;
-use App\Http\Controllers\LeadWebhookController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\EmailController;
@@ -35,7 +35,7 @@ use Illuminate\Support\Facades\Route;
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/two-factor/verify', [TwoFactorAuthController::class, 'verify']);
 
-Route::prefix('/meta')->controller(LeadWebhookController::class)->group(function () {
+Route::prefix('/facebook')->controller(FacebookLeadController::class)->group(function () {
     Route::get('/webhook', 'verify');
     Route::post('/webhook', 'webhook');
 });
@@ -238,4 +238,9 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::get('/appointment', [AppointmentController::class, 'getAppointments']);
+
+    Route::prefix('/facebook')->controller(FacebookLeadController::class)->group(function () {
+        Route::get('/leads', 'leads');
+        Route::post('/send-to-crm', 'sendToCrm');
+    });
 });

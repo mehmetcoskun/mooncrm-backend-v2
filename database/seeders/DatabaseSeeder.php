@@ -203,6 +203,9 @@ class DatabaseSeeder extends Seeder
             ['title' => 'AI Sesli Asistan', 'slug' => 'vapi_PhoneNumberEdit', 'is_custom' => false, 'is_global' => true],
             ['title' => 'AI Sesli Asistan', 'slug' => 'vapi_PhoneNumberDelete', 'is_custom' => false, 'is_global' => true],
             ['title' => 'AI Sesli Asistan', 'slug' => 'vapi_PhoneNumberCall', 'is_custom' => false, 'is_global' => true],
+
+            // Facebook Lead
+            ['title' => 'Facebook Lead', 'slug' => 'facebook_lead_Access', 'is_custom' => false, 'is_global' => true],
         ];
 
         foreach ($permissions as $permission) {
