@@ -240,6 +240,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/appointment', [AppointmentController::class, 'getAppointments']);
 
     Route::prefix('/facebook')->controller(FacebookLeadController::class)->group(function () {
+        Route::get('/pages', 'pages');
+        Route::get('/forms', 'forms');
         Route::get('/leads', 'leads');
         Route::post('/send-to-crm', 'sendToCrm');
     });

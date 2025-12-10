@@ -10,6 +10,108 @@ use Illuminate\Support\Facades\Http;
 
 class FacebookLeadController extends Controller
 {
+    public function pages(Request $request)
+    {
+        if (Gate::none(['facebook_lead_Access']))
+            return response()->json(['message' => 'Unauthorized'], 403);
+
+        $organizationId = auth()->user()->organization_id ?? $request->header('X-Organization-Id');
+
+        $setting = Setting::where('organization_id', $organizationId)->first();
+
+        if (!$setting || !$setting->facebook_settings || !isset($setting->facebook_settings['access_token'])) {
+            return response()->json([
+                'data' => [],
+            ]);
+        }
+
+        $accessToken = $setting->facebook_settings['access_token'];
+
+        try {
+            $pagesResponse = Http::get("https://graph.facebook.com/v24.0/me/accounts", [
+                'access_token' => $accessToken,
+                'fields' => 'id,name,access_token'
+            ]);
+
+            if (!$pagesResponse->successful()) {
+                return response()->json(['message' => 'Facebook sayfaları alınamadı.'], 400);
+            }
+
+            $pagesData = $pagesResponse->json();
+
+            return response()->json([
+                'data' => $pagesData['data'] ?? [],
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json(['message' => "Facebook sayfaları alınırken hata oluştu: " . $e->getMessage()], 500);
+        }
+    }
+
+    public function forms(Request $request)
+    {
+        if (Gate::none(['facebook_lead_Access']))
+            return response()->json(['message' => 'Unauthorized'], 403);
+
+        $organizationId = auth()->user()->organization_id ?? $request->header('X-Organization-Id');
+
+        $setting = Setting::where('organization_id', $organizationId)->first();
+
+        if (!$setting || !$setting->facebook_settings || !isset($setting->facebook_settings['access_token'])) {
+            return response()->json([
+                'data' => [],
+            ]);
+        }
+
+        $accessToken = $setting->facebook_settings['access_token'];
+        $pageId = $request->input('page_id');
+
+        if (!$pageId) {
+            return response()->json(['message' => 'Page ID gereklidir.'], 400);
+        }
+
+        try {
+            $pagesResponse = Http::get("https://graph.facebook.com/v24.0/me/accounts", [
+                'access_token' => $accessToken,
+                'fields' => 'id,name,access_token'
+            ]);
+
+            if (!$pagesResponse->successful()) {
+                return response()->json(['message' => 'Facebook sayfaları alınamadı.'], 400);
+            }
+
+            $pagesData = $pagesResponse->json();
+            $page = collect($pagesData['data'] ?? [])->firstWhere('id', $pageId);
+
+            if (!$page) {
+                return response()->json(['message' => 'Sayfa bulunamadı.'], 404);
+            }
+
+            $pageAccessToken = $page['access_token'] ?? $accessToken;
+
+            $formsResponse = Http::get("https://graph.facebook.com/v24.0/{$pageId}/leadgen_forms", [
+                'access_token' => $pageAccessToken,
+                'fields' => 'id,name,status'
+            ]);
+
+            if (!$formsResponse->successful()) {
+                return response()->json([
+                    'data' => [],
+                ]);
+            }
+
+            $formsData = $formsResponse->json();
+            $activeForms = array_values(array_filter($formsData['data'] ?? [], fn($form) => ($form['status'] ?? '') === 'ACTIVE'));
+
+            return response()->json([
+                'data' => $activeForms,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json(['message' => "Facebook formları alınırken hata oluştu: " . $e->getMessage()], 500);
+        }
+    }
+
     public function leads(Request $request)
     {
         if (Gate::none(['facebook_lead_Access']))
@@ -27,9 +129,18 @@ class FacebookLeadController extends Controller
         }
 
         $accessToken = $setting->facebook_settings['access_token'];
+        $requestedPageId = $request->input('page_id');
+        $requestedFormId = $request->input('form_id');
         $limit = $request->input('limit', 10);
         $after = $request->input('after');
         $before = $request->input('before');
+
+        if (!$requestedPageId || !$requestedFormId) {
+            return response()->json([
+                'data' => [],
+                'paging' => null,
+            ]);
+        }
 
         try {
             $pagesResponse = Http::get("https://graph.facebook.com/v24.0/me/accounts", [
@@ -50,8 +161,12 @@ class FacebookLeadController extends Controller
                 ]);
             }
 
-            // İlk sayfayı ve formları al
-            $page = $pagesData['data'][0];
+            $page = collect($pagesData['data'])->firstWhere('id', $requestedPageId);
+            
+            if (!$page) {
+                return response()->json(['message' => 'Sayfa bulunamadı.'], 404);
+            }
+
             $pageAccessToken = $page['access_token'] ?? $accessToken;
             $pageId = $page['id'];
             $pageName = $page['name'];
@@ -69,21 +184,18 @@ class FacebookLeadController extends Controller
             }
 
             $formsData = $formsResponse->json();
-            $activeForms = array_filter($formsData['data'] ?? [], fn($form) => ($form['status'] ?? '') === 'ACTIVE');
+            $form = collect($formsData['data'] ?? [])->firstWhere('id', $requestedFormId);
 
-            if (empty($activeForms)) {
+            if (!$form) {
                 return response()->json([
                     'data' => [],
                     'paging' => null,
                 ]);
             }
 
-            // İlk aktif formu kullan
-            $form = reset($activeForms);
             $formId = $form['id'];
             $formName = $form['name'];
 
-            // Leads URL'ini oluştur
             $leadsParams = [
                 'access_token' => $pageAccessToken,
                 'fields' => 'id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id,is_organic,platform',
