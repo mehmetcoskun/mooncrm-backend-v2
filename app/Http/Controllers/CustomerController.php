@@ -141,8 +141,10 @@ class CustomerController extends Controller
                 ->first();
 
             if ($existingCustomer) {
+                $assignedUser = $existingCustomer->user;
+                $userName = $assignedUser ? $assignedUser->name : 'Bilinmeyen danışman';
                 return response()->json([
-                    'message' => 'Bu e-posta adresi ile kayıtlı bir müşteri zaten mevcut.',
+                    'message' => 'Bu e-posta adresi ile kayıtlı bir müşteri zaten mevcut. (Danışman: ' . $userName . ')',
                 ], 422);
             }
         }
@@ -153,8 +155,10 @@ class CustomerController extends Controller
                 ->first();
 
             if ($existingCustomer) {
+                $assignedUser = $existingCustomer->user;
+                $userName = $assignedUser ? $assignedUser->name : 'Bilinmeyen danışman';
                 return response()->json([
-                    'message' => 'Bu telefon numarası ile kayıtlı bir müşteri zaten mevcut.',
+                    'message' => 'Bu telefon numarası ile kayıtlı bir müşteri zaten mevcut. (Danışman: ' . $userName . ')',
                 ], 422);
             }
         }
