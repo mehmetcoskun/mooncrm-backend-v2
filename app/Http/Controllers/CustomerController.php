@@ -261,7 +261,11 @@ class CustomerController extends Controller
             $customer->travel_info[count($customer->travel_info) - 1] : null;
 
         if ($lastTravelInfo) {
-            if (isset($data['status_id']) && $data['status_id'] == 9) {
+            $newStatusId = $customer->status_id;
+            $statusChanged = $oldStatusId != $newStatusId;
+            $travelInfoChanged = $oldTravelInfo != $customer->travel_info;
+
+            if ($newStatusId == 9 && ($statusChanged || $travelInfoChanged)) {
                 if (!$lastTravelInfo['is_custom_hotel'] && isset($lastTravelInfo['hotel_id']) && !empty($lastTravelInfo['hotel_id'])) {
                     $this->sendHotelMessage($customer, statusId: 9);
                     $this->sendHotelEmail($customer, 9);
@@ -270,7 +274,7 @@ class CustomerController extends Controller
                 if (isset($lastTravelInfo['transfer_id']) && !empty($lastTravelInfo['transfer_id'])) {
                     $this->sendTransferMessage($customer, 9);
                 }
-            } else if (isset($data['status_id']) && $data['status_id'] == 8) {
+            } else if ($newStatusId == 8) {
                 $oldLastTravelInfo = $oldTravelInfo && is_array($oldTravelInfo) && count($oldTravelInfo) > 0 ?
                     $oldTravelInfo[count($oldTravelInfo) - 1] : null;
                 $oldRoomType = $oldLastTravelInfo && isset($oldLastTravelInfo['room_type']) ? $oldLastTravelInfo['room_type'] : '';
@@ -278,7 +282,7 @@ class CustomerController extends Controller
                 $newRoomType = $lastTravelInfo && isset($lastTravelInfo['room_type']) ? $lastTravelInfo['room_type'] : '';
                 $hasTravelInfo = !empty($customer->travel_info) && isset($lastTravelInfo['arrival_date']) && isset($lastTravelInfo['departure_date']);
 
-                if ($hasTravelInfo && !empty($newRoomType) && (($oldRoomType != $newRoomType) || ($oldTravelInfo != $customer->travel_info) || ($oldStatusId != $data['status_id']))) {
+                if ($hasTravelInfo && !empty($newRoomType) && (($oldRoomType != $newRoomType) || $travelInfoChanged || $statusChanged)) {
                     $this->sendConfirmationEmail($customer);
                     $this->sendSalesNotification($customer);
                     if (!$lastTravelInfo['is_custom_hotel'] && isset($lastTravelInfo['hotel_id']) && !empty($lastTravelInfo['hotel_id'])) {
