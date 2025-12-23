@@ -146,6 +146,25 @@ class DashboardController extends Controller
                 ];
             });
 
+        $countryQuery = Customer::selectRaw('country, COUNT(*) as count')
+            ->where('organization_id', $organizationId)
+            ->whereNotNull('country')
+            ->where('country', '!=', '');
+
+        if (in_array(3, $userRoleIds) || in_array(7, $userRoleIds) && !in_array(1, $userRoleIds) && !in_array(2, $userRoleIds)) {
+            $countryQuery->where('user_id', $user->id);
+        }
+
+        $countryDistribution = $countryQuery->groupBy('country')
+            ->orderByDesc('count')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'country' => $item->country,
+                    'value' => (int) $item->count
+                ];
+            });
+
         return response()->json([
             'stats' => [
                 'totalCustomers' => $totalCustomers,
@@ -162,7 +181,8 @@ class DashboardController extends Controller
             'monthlySales' => $monthlySales,
             'categoryDistribution' => $categoryDistribution,
             'statusDistribution' => $statusDistribution,
-            'upcomingReminders' => $upcomingReminders
+            'upcomingReminders' => $upcomingReminders,
+            'countryDistribution' => $countryDistribution
         ]);
     }
 }
