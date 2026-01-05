@@ -18,6 +18,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use libphonenumber\PhoneNumberFormat;
 use libphonenumber\PhoneNumberUtil;
 use Symfony\Component\Mailer\Mailer;
@@ -551,7 +552,21 @@ class CustomerController extends Controller
         }
 
         if ($existingCustomer) {
+            if ($existingCustomer->organization_id == 4) {
+                Log::info('[ORG-4] Mevcut müşteri bulundu', [
+                    'customer_id' => $existingCustomer->id,
+                    'customer_name' => $existingCustomer->name,
+                    'status_id' => $existingCustomer->status_id,
+                    'user_id' => $existingCustomer->user_id
+                ]);
+            }
+
             if ($existingCustomer->status_id === 11) {
+                if ($existingCustomer->organization_id == 4) {
+                    Log::warning('[ORG-4] Müşteri engellenmiş, mesaj gönderilmeyecek', [
+                        'customer_id' => $existingCustomer->id
+                    ]);
+                }
                 return response()->json([
                     'message' => 'Bu müşteri engellenmiştir.',
                 ], 200);
@@ -562,8 +577,20 @@ class CustomerController extends Controller
             $existingCustomer->save();
 
             if ($existingCustomer->user_id) {
+                if ($existingCustomer->organization_id == 4) {
+                    Log::info('[ORG-4] Mevcut müşteri için mesaj gönderilecek', [
+                        'customer_id' => $existingCustomer->id,
+                        'user_id' => $existingCustomer->user_id
+                    ]);
+                }
                 $this->sendCustomerMessages($existingCustomer);
                 $this->sendUserNotification($existingCustomer);
+            } else {
+                if ($existingCustomer->organization_id == 4) {
+                    Log::warning('[ORG-4] Mevcut müşteri için user_id yok, mesaj gönderilmeyecek', [
+                        'customer_id' => $existingCustomer->id
+                    ]);
+                }
             }
 
             return $existingCustomer->load('organization', 'user', 'category', 'services', 'status');
@@ -789,9 +816,29 @@ class CustomerController extends Controller
         $customer = Customer::create($data);
         $customer->load('organization', 'user', 'category', 'services', 'status');
 
+        if ($customer->organization_id == 4) {
+            Log::info('[ORG-4] Lead oluşturuldu', [
+                'customer_id' => $customer->id,
+                'customer_name' => $customer->name,
+                'customer_phone' => $customer->phone,
+                'customer_email' => $customer->email,
+                'user_id' => $customer->user_id,
+                'category_id' => $customer->category_id,
+                'tag_id' => $tag ? $tag->id : null,
+                'has_user' => !empty($customer->user_id)
+            ]);
+        }
+
         if ($customer->user_id) {
             $this->sendCustomerMessages($customer, $category, $tag);
             $this->sendUserNotification($customer);
+        } else {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] Lead oluşturuldu ama user_id yok, mesaj gönderilmeyecek', [
+                    'customer_id' => $customer->id,
+                    'customer_name' => $customer->name
+                ]);
+            }
         }
 
         return $customer;
@@ -799,53 +846,137 @@ class CustomerController extends Controller
 
     private function sendCustomerMessages($customer, $category = null, $tag = null)
     {
+        if ($customer->organization_id == 4) {
+            Log::info('[ORG-4] sendCustomerMessages başladı', [
+                'customer_id' => $customer->id,
+                'has_tag' => !empty($tag),
+                'has_category' => !empty($category),
+                'category_id' => $category ? $category->id : null,
+                'category_channel' => $category ? $category->channel : null
+            ]);
+        }
+
         if ($tag) {
+            if ($customer->organization_id == 4) {
+                Log::info('[ORG-4] Tag mesajı gönderilecek', [
+                    'customer_id' => $customer->id,
+                    'tag_id' => $tag->id
+                ]);
+            }
             $this->sendTagMessage($customer, $tag);
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->welcome_message_settings)) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] Settings bulunamadı veya welcome_message_settings boş', [
+                    'customer_id' => $customer->id,
+                    'has_settings' => !empty($settings)
+                ]);
+            }
             return;
         }
 
         $messageSettings = $settings->welcome_message_settings;
         $channel = $category ? $category->channel : null;
 
+        if ($customer->organization_id == 4) {
+            Log::info('[ORG-4] Channel belirlendi', [
+                'customer_id' => $customer->id,
+                'channel' => $channel,
+                'whatsapp_status' => !empty($messageSettings['whatsapp']) && $messageSettings['whatsapp']['status'] ?? false,
+                'sms_status' => !empty($messageSettings['sms']) && $messageSettings['sms']['status'] ?? false,
+                'email_status' => !empty($messageSettings['email']) && $messageSettings['email']['status'] ?? false,
+                'phone_status' => !empty($messageSettings['phone']) && $messageSettings['phone']['status'] ?? false
+            ]);
+        }
+
         if ($channel) {
             switch ($channel) {
                 case 'whatsapp':
                     if (!empty($messageSettings['whatsapp']) && $messageSettings['whatsapp']['status']) {
                         $this->sendWhatsappMessage($customer, $messageSettings['whatsapp']);
+                    } else {
+                        if ($customer->organization_id == 4) {
+                            Log::warning('[ORG-4] WhatsApp mesajı gönderilmeyecek - ayarlar kapalı veya boş', [
+                                'customer_id' => $customer->id
+                            ]);
+                        }
                     }
                     break;
                 case 'sms':
                     if (!empty($messageSettings['sms']) && $messageSettings['sms']['status']) {
                         $this->sendSmsMessage($customer, $messageSettings['sms']);
+                    } else {
+                        if ($customer->organization_id == 4) {
+                            Log::warning('[ORG-4] SMS mesajı gönderilmeyecek - ayarlar kapalı veya boş', [
+                                'customer_id' => $customer->id
+                            ]);
+                        }
                     }
                     break;
                 case 'email':
                     if (!empty($messageSettings['email']) && $messageSettings['email']['status']) {
                         $this->sendEmailMessage($customer, $messageSettings['email']);
+                    } else {
+                        if ($customer->organization_id == 4) {
+                            Log::warning('[ORG-4] Email mesajı gönderilmeyecek - ayarlar kapalı veya boş', [
+                                'customer_id' => $customer->id
+                            ]);
+                        }
                     }
                     break;
                 case 'phone':
                     if (!empty($messageSettings['phone']) && $messageSettings['phone']['status']) {
                         $this->sendPhoneCall($customer, $category);
+                    } else {
+                        if ($customer->organization_id == 4) {
+                            Log::warning('[ORG-4] Phone call gönderilmeyecek - ayarlar kapalı veya boş', [
+                                'customer_id' => $customer->id
+                            ]);
+                        }
                     }
                     break;
+            }
+        } else {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] Channel belirlenemedi, mesaj gönderilmeyecek', [
+                    'customer_id' => $customer->id,
+                    'has_category' => !empty($category)
+                ]);
             }
         }
     }
 
     private function sendTagMessage($customer, $tag)
     {
+        if ($customer->organization_id == 4) {
+            Log::info('[ORG-4] sendTagMessage başladı', [
+                'customer_id' => $customer->id,
+                'tag_id' => $tag->id,
+                'has_welcome_message' => !empty($tag->welcome_message)
+            ]);
+        }
+
         if (empty($tag->welcome_message)) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] Tag welcome_message boş', [
+                    'customer_id' => $customer->id,
+                    'tag_id' => $tag->id
+                ]);
+            }
             return;
         }
 
         $user = $customer->user;
         if (!$user) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] User bulunamadı, tag mesajı gönderilemeyecek', [
+                    'customer_id' => $customer->id,
+                    'user_id' => $customer->user_id
+                ]);
+            }
             return;
         }
 
@@ -860,6 +991,14 @@ class CustomerController extends Controller
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->whatsapp_settings) || empty($settings->whatsapp_settings['api_url'])) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] WhatsApp settings bulunamadı veya api_url boş', [
+                    'customer_id' => $customer->id,
+                    'has_settings' => !empty($settings),
+                    'has_whatsapp_settings' => !empty($settings->whatsapp_settings),
+                    'api_url' => $settings->whatsapp_settings['api_url'] ?? null
+                ]);
+            }
             return;
         }
 
@@ -868,6 +1007,13 @@ class CustomerController extends Controller
             ->first();
 
         if (!$userSession) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] User session bulunamadı', [
+                    'customer_id' => $customer->id,
+                    'user_id' => $user->id,
+                    'whatsapp_session_id' => $user->whatsapp_session_id
+                ]);
+            }
             return;
         }
 
@@ -877,31 +1023,84 @@ class CustomerController extends Controller
             $formattedPhone = $phoneUtil->format($phoneNumber, PhoneNumberFormat::E164);
             $formattedPhone = substr($formattedPhone, 1) . '@c.us';
 
-            Http::withHeaders([
+            if ($customer->organization_id == 4) {
+                Log::info('[ORG-4] Tag mesajı gönderiliyor', [
+                    'customer_id' => $customer->id,
+                    'formatted_phone' => $formattedPhone,
+                    'session' => $userSession->title,
+                    'api_url' => $settings->whatsapp_settings['api_url']
+                ]);
+            }
+
+            $response = Http::withHeaders([
                 'X-Api-Key' => $settings->whatsapp_settings['api_key']
             ])->post($settings->whatsapp_settings['api_url'] . '/sendText', [
                 'chatId' => $formattedPhone,
                 'text' => $message,
                 'session' => $userSession->title
             ]);
+
+            if ($customer->organization_id == 4) {
+                Log::info('[ORG-4] Tag mesajı gönderildi', [
+                    'customer_id' => $customer->id,
+                    'response_status' => $response->status(),
+                    'response_body' => $response->body()
+                ]);
+            }
         } catch (\Exception $e) {
+            if ($customer->organization_id == 4) {
+                Log::error('[ORG-4] Tag mesajı gönderilirken hata', [
+                    'customer_id' => $customer->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
         }
     }
 
     private function sendWhatsappMessage($customer, $whatsappSettings)
     {
+        if ($customer->organization_id == 4) {
+            Log::info('[ORG-4] sendWhatsappMessage başladı', [
+                'customer_id' => $customer->id,
+                'customer_phone' => $customer->phone
+            ]);
+        }
+
         $currentTime = Carbon::now()->format('H:i:s');
         if ($currentTime < $whatsappSettings['start_time'] || $currentTime > $whatsappSettings['end_time']) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] WhatsApp mesajı gönderilmeyecek - zaman dışında', [
+                    'customer_id' => $customer->id,
+                    'current_time' => $currentTime,
+                    'start_time' => $whatsappSettings['start_time'],
+                    'end_time' => $whatsappSettings['end_time']
+                ]);
+            }
             return;
         }
 
         $user = $customer->user;
         if (!$user) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] User bulunamadı, WhatsApp mesajı gönderilemeyecek', [
+                    'customer_id' => $customer->id,
+                    'user_id' => $customer->user_id
+                ]);
+            }
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->whatsapp_settings) || empty($settings->whatsapp_settings['api_url'])) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] WhatsApp settings bulunamadı veya api_url boş', [
+                    'customer_id' => $customer->id,
+                    'has_settings' => !empty($settings),
+                    'has_whatsapp_settings' => !empty($settings->whatsapp_settings),
+                    'api_url' => $settings->whatsapp_settings['api_url'] ?? null
+                ]);
+            }
             return;
         }
 
@@ -910,6 +1109,13 @@ class CustomerController extends Controller
             ->first();
 
         if (!$userSession) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] User session bulunamadı', [
+                    'customer_id' => $customer->id,
+                    'user_id' => $user->id,
+                    'whatsapp_session_id' => $user->whatsapp_session_id
+                ]);
+            }
             return;
         }
 
@@ -917,6 +1123,13 @@ class CustomerController extends Controller
         $message = $this->getMessageByLanguage($whatsappSettings['messages'], $customerLanguage);
 
         if (!$message) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] Mesaj template bulunamadı', [
+                    'customer_id' => $customer->id,
+                    'customer_language' => $customerLanguage,
+                    'available_messages' => array_keys($whatsappSettings['messages'] ?? [])
+                ]);
+            }
             return;
         }
 
@@ -940,7 +1153,17 @@ class CustomerController extends Controller
             if (!empty($whatsappSettings['file']) && !empty($whatsappSettings['file']['content'])) {
                 $endpoint = $whatsappSettings['file']['type'] === 'image' ? '/sendImage' : '/sendFile';
 
-                Http::withHeaders([
+                if ($customer->organization_id == 4) {
+                    Log::info('[ORG-4] WhatsApp dosya mesajı gönderiliyor', [
+                        'customer_id' => $customer->id,
+                        'formatted_phone' => $formattedPhone,
+                        'session' => $userSession->title,
+                        'endpoint' => $endpoint,
+                        'file_type' => $whatsappSettings['file']['type']
+                    ]);
+                }
+
+                $response = Http::withHeaders([
                     'X-Api-Key' => $settings->whatsapp_settings['api_key']
                 ])->post($apiUrl . $endpoint, [
                     'chatId' => $formattedPhone,
@@ -952,42 +1175,114 @@ class CustomerController extends Controller
                     'caption' => $message,
                     'session' => $userSession->title
                 ]);
+
+                if ($customer->organization_id == 4) {
+                    Log::info('[ORG-4] WhatsApp dosya mesajı gönderildi', [
+                        'customer_id' => $customer->id,
+                        'response_status' => $response->status(),
+                        'response_body' => $response->body()
+                    ]);
+                }
             } else {
-                Http::withHeaders([
+                if ($customer->organization_id == 4) {
+                    Log::info('[ORG-4] WhatsApp text mesajı gönderiliyor', [
+                        'customer_id' => $customer->id,
+                        'formatted_phone' => $formattedPhone,
+                        'session' => $userSession->title,
+                        'message_length' => strlen($message)
+                    ]);
+                }
+
+                $response = Http::withHeaders([
                     'X-Api-Key' => $settings->whatsapp_settings['api_key']
                 ])->post($apiUrl . '/sendText', [
                     'chatId' => $formattedPhone,
                     'text' => $message,
                     'session' => $userSession->title
                 ]);
+
+                if ($customer->organization_id == 4) {
+                    Log::info('[ORG-4] WhatsApp text mesajı gönderildi', [
+                        'customer_id' => $customer->id,
+                        'response_status' => $response->status(),
+                        'response_body' => $response->body()
+                    ]);
+                }
             }
         } catch (\Exception $e) {
+            if ($customer->organization_id == 4) {
+                Log::error('[ORG-4] WhatsApp mesajı gönderilirken hata', [
+                    'customer_id' => $customer->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
         }
     }
 
     private function sendSmsMessage($customer, $smsSettings)
     {
+        if ($customer->organization_id == 4) {
+            Log::info('[ORG-4] sendSmsMessage başladı', [
+                'customer_id' => $customer->id,
+                'customer_phone' => $customer->phone
+            ]);
+        }
+
         $currentTime = Carbon::now()->format('H:i:s');
         if ($currentTime < $smsSettings['start_time'] || $currentTime > $smsSettings['end_time']) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] SMS mesajı gönderilmeyecek - zaman dışında', [
+                    'customer_id' => $customer->id,
+                    'current_time' => $currentTime,
+                    'start_time' => $smsSettings['start_time'],
+                    'end_time' => $smsSettings['end_time']
+                ]);
+            }
             return;
         }
 
         $user = $customer->user;
         if (!$user) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] User bulunamadı, SMS mesajı gönderilemeyecek', [
+                    'customer_id' => $customer->id,
+                    'user_id' => $customer->user_id
+                ]);
+            }
             return;
         }
 
         if (empty($customer->phone)) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] Customer phone boş, SMS mesajı gönderilemeyecek', [
+                    'customer_id' => $customer->id
+                ]);
+            }
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->sms_settings)) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] SMS settings bulunamadı', [
+                    'customer_id' => $customer->id,
+                    'has_settings' => !empty($settings)
+                ]);
+            }
             return;
         }
 
         $twilioSettings = $settings->sms_settings;
         if (empty($twilioSettings['account_sid']) || empty($twilioSettings['auth_token']) || empty($twilioSettings['phone_number'])) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] Twilio ayarları eksik', [
+                    'customer_id' => $customer->id,
+                    'has_account_sid' => !empty($twilioSettings['account_sid']),
+                    'has_auth_token' => !empty($twilioSettings['auth_token']),
+                    'has_phone_number' => !empty($twilioSettings['phone_number'])
+                ]);
+            }
             return;
         }
 
@@ -995,6 +1290,12 @@ class CustomerController extends Controller
         $message = $this->getMessageByLanguage($smsSettings['messages'], $customerLanguage);
 
         if (!$message) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] SMS mesaj template bulunamadı', [
+                    'customer_id' => $customer->id,
+                    'customer_language' => $customerLanguage
+                ]);
+            }
             return;
         }
 
@@ -1008,37 +1309,91 @@ class CustomerController extends Controller
         );
 
         try {
+            if ($customer->organization_id == 4) {
+                Log::info('[ORG-4] SMS mesajı gönderiliyor', [
+                    'customer_id' => $customer->id,
+                    'phone' => $customer->phone,
+                    'from' => $twilioSettings['phone_number']
+                ]);
+            }
+
             $client = new Client($twilioSettings['account_sid'], $twilioSettings['auth_token']);
 
-            $client->messages->create(
+            $result = $client->messages->create(
                 $customer->phone,
                 [
                     'from' => $twilioSettings['phone_number'],
                     'body' => $message
                 ]
             );
+
+            if ($customer->organization_id == 4) {
+                Log::info('[ORG-4] SMS mesajı gönderildi', [
+                    'customer_id' => $customer->id,
+                    'message_sid' => $result->sid ?? null
+                ]);
+            }
         } catch (\Exception $e) {
+            if ($customer->organization_id == 4) {
+                Log::error('[ORG-4] SMS mesajı gönderilirken hata', [
+                    'customer_id' => $customer->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
         }
     }
 
     private function sendEmailMessage($customer, $emailSettings)
     {
+        if ($customer->organization_id == 4) {
+            Log::info('[ORG-4] sendEmailMessage başladı', [
+                'customer_id' => $customer->id,
+                'customer_email' => $customer->email
+            ]);
+        }
+
         $currentTime = Carbon::now()->format('H:i:s');
         if ($currentTime < $emailSettings['start_time'] || $currentTime > $emailSettings['end_time']) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] Email mesajı gönderilmeyecek - zaman dışında', [
+                    'customer_id' => $customer->id,
+                    'current_time' => $currentTime,
+                    'start_time' => $emailSettings['start_time'],
+                    'end_time' => $emailSettings['end_time']
+                ]);
+            }
             return;
         }
 
         if (empty($customer->email)) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] Customer email boş, Email mesajı gönderilemeyecek', [
+                    'customer_id' => $customer->id
+                ]);
+            }
             return;
         }
 
         $user = $customer->user;
         if (!$user) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] User bulunamadı, Email mesajı gönderilemeyecek', [
+                    'customer_id' => $customer->id,
+                    'user_id' => $customer->user_id
+                ]);
+            }
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->mail_settings)) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] Mail settings bulunamadı', [
+                    'customer_id' => $customer->id,
+                    'has_settings' => !empty($settings)
+                ]);
+            }
             return;
         }
 
@@ -1046,6 +1401,12 @@ class CustomerController extends Controller
         $messageTemplate = $this->getMessageByLanguage($emailSettings['messages'], $customerLanguage);
 
         if (!$messageTemplate) {
+            if ($customer->organization_id == 4) {
+                Log::warning('[ORG-4] Email mesaj template bulunamadı', [
+                    'customer_id' => $customer->id,
+                    'customer_language' => $customerLanguage
+                ]);
+            }
             return;
         }
 
@@ -1067,6 +1428,14 @@ class CustomerController extends Controller
         try {
             $transport->start();
         } catch (\Exception $e) {
+            if ($customer->organization_id == 4) {
+                Log::error('[ORG-4] SMTP transport başlatılamadı', [
+                    'customer_id' => $customer->id,
+                    'error' => $e->getMessage(),
+                    'smtp_host' => $smtpSettings['smtp_host'],
+                    'smtp_port' => $smtpSettings['smtp_port']
+                ]);
+            }
             return;
         }
 
@@ -1081,8 +1450,30 @@ class CustomerController extends Controller
             ->html(nl2br($message));
 
         try {
+            if ($customer->organization_id == 4) {
+                Log::info('[ORG-4] Email mesajı gönderiliyor', [
+                    'customer_id' => $customer->id,
+                    'to' => $customer->email,
+                    'subject' => 'Welcome to ' . $organization->name
+                ]);
+            }
+
             $mailer->send($email);
+
+            if ($customer->organization_id == 4) {
+                Log::info('[ORG-4] Email mesajı gönderildi', [
+                    'customer_id' => $customer->id,
+                    'to' => $customer->email
+                ]);
+            }
         } catch (\Exception $e) {
+            if ($customer->organization_id == 4) {
+                Log::error('[ORG-4] Email mesajı gönderilirken hata', [
+                    'customer_id' => $customer->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
         }
     }
 
