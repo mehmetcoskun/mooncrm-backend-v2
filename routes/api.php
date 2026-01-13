@@ -22,6 +22,7 @@ use App\Http\Controllers\SmsController;
 use App\Http\Controllers\SmsTemplateController;
 use App\Http\Controllers\StatusController;
 use App\Http\Controllers\TagController;
+use App\Http\Controllers\TiktokLeadController;
 use App\Http\Controllers\TransferController;
 use App\Http\Controllers\TwoFactorAuthController;
 use App\Http\Controllers\UserController;
@@ -37,6 +38,11 @@ Route::post('/auth/two-factor/verify', [TwoFactorAuthController::class, 'verify'
 
 Route::prefix('/facebook')->controller(FacebookLeadController::class)->group(function () {
     Route::get('/webhook', 'verify');
+    Route::post('/webhook', 'webhook');
+});
+
+Route::prefix('/tiktok')->controller(TiktokLeadController::class)->group(function () {
+    Route::post('/callback', 'callback');
     Route::post('/webhook', 'webhook');
 });
 
