@@ -192,6 +192,7 @@ class DatabaseSeeder extends Seeder
             ['title' => 'Ayarlar', 'slug' => 'setting_Vapi', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Ayarlar', 'slug' => 'setting_UserNotification', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Ayarlar', 'slug' => 'setting_Facebook', 'is_custom' => false, 'is_global' => true],
+            ['title' => 'Ayarlar', 'slug' => 'setting_Tiktok', 'is_custom' => false, 'is_global' => true],
 
             // AI Sesli Asistan
             ['title' => 'AI Sesli Asistan', 'slug' => 'vapi_AssistantAccess', 'is_custom' => false, 'is_global' => true],
