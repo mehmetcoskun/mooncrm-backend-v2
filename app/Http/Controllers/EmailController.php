@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Customer;
+use App\Models\EmailTemplate;
 use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -34,11 +36,41 @@ class EmailController extends Controller
 
         $mailer = new Mailer($transport);
 
+        if (!$request->customer_id) {
+            return response()->json(['message' => 'Müşteri ID gereklidir.'], 400);
+        }
+
+        $customer = Customer::where('organization_id', $organizationId)
+            ->find($request->customer_id);
+
+        if (!$customer) {
+            return response()->json(['message' => 'Müşteri bulunamadı.'], 404);
+        }
+
+        if (!$customer->email) {
+            return response()->json(['message' => 'Müşteri e-posta adresi bulunamadı.'], 400);
+        }
+
+        if (!$request->email_template_id) {
+            return response()->json(['message' => 'E-posta şablonu gereklidir.'], 400);
+        }
+
+        $template = EmailTemplate::where('organization_id', $organizationId)
+            ->find($request->email_template_id);
+
+        if (!$template) {
+            return response()->json(['message' => 'E-posta şablonu bulunamadı.'], 404);
+        }
+
+        if (!$template->subject || !$template->html) {
+            return response()->json(['message' => 'E-posta şablonunda konu veya içerik eksik.'], 400);
+        }
+
         $email = (new Email())
             ->from(new Address($smtpSettings['smtp_username'], $smtpSettings['smtp_from_name']))
-            ->subject($request->subject)
-            ->to(new Address($request->customer['email'], $request->customer['name'] ?? ''))
-            ->html($request->html);
+            ->subject($template->subject)
+            ->to(new Address($customer->email, $customer->name ?? ''))
+            ->html($template->html);
 
         try {
             $mailer->send($email);

@@ -24,6 +24,40 @@ class SmsController extends Controller
 
         $organizationId = auth()->user()->organization_id ?? $request->header('X-Organization-Id');
 
+        if (!$request->customer_id) {
+            return response()->json(['message' => 'Müşteri ID gereklidir.'], 400);
+        }
+
+        $customer = Customer::where('organization_id', $organizationId)
+            ->find($request->customer_id);
+
+        if (!$customer) {
+            return response()->json(['message' => 'Müşteri bulunamadı.'], 404);
+        }
+
+        if (!$customer->phone) {
+            return response()->json(['message' => 'Müşteri telefon numarası bulunamadı.'], 400);
+        }
+
+        if (!$request->sms_template_id) {
+            return response()->json(['message' => 'SMS şablonu gereklidir.'], 400);
+        }
+
+        $template = SmsTemplate::where('organization_id', $organizationId)
+            ->find($request->sms_template_id);
+
+        if (!$template) {
+            return response()->json(['message' => 'SMS şablonu bulunamadı.'], 404);
+        }
+
+        if (!$template->message) {
+            return response()->json(['message' => 'SMS şablonunda mesaj eksik.'], 400);
+        }
+
+        $firstName = explode(' ', $customer->name)[0] ?? '';
+        $userName = auth()->user()->name ?? '';
+        $message = str_replace(['{name}', '{user}'], [$firstName, $userName], $template->message);
+
         $settings = Setting::where('organization_id', $organizationId)->first();
         $smsSettings = json_decode($settings->sms_settings, true);
 
@@ -31,10 +65,10 @@ class SmsController extends Controller
             $client = new Client($smsSettings['account_sid'], $smsSettings['auth_token']);
 
             $client->messages->create(
-                $request->customer['phone'],
+                $customer->phone,
                 [
                     'from' => $smsSettings['phone_number'],
-                    'body' => $request->message
+                    'body' => $message
                 ]
             );
 
