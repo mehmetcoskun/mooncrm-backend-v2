@@ -55,9 +55,6 @@ Route::prefix('/web-form')->controller(WebFormController::class)->group(function
 
 Route::post('/vapi/webhook', [VapiController::class, 'webhook']);
 
-// Geçici test route'u - sonra silinecek
-Route::get('/test-sales-email/{customerId}', [CustomerController::class, 'testSalesEmail']);
-
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/change-password', [AuthController::class, 'changePassword']);

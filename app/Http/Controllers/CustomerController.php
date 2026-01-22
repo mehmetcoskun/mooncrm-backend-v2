@@ -1214,25 +1214,12 @@ class CustomerController extends Controller
 
     private function sendConfirmationEmail(Customer $customer)
     {
-        \Log::info('sendConfirmationEmail başladı', ['customer_id' => $customer->id, 'email' => $customer->email]);
-
         if (empty($customer->email) || empty($customer->travel_info) || !is_array($customer->travel_info)) {
-            \Log::warning('sendConfirmationEmail: Email veya travel_info eksik', [
-                'customer_id' => $customer->id,
-                'has_email' => !empty($customer->email),
-                'has_travel_info' => !empty($customer->travel_info)
-            ]);
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->mail_settings) || empty($settings->sales_mail_settings)) {
-            \Log::warning('sendConfirmationEmail: Settings eksik', [
-                'customer_id' => $customer->id,
-                'has_settings' => (bool)$settings,
-                'has_mail_settings' => $settings ? !empty($settings->mail_settings) : false,
-                'has_sales_mail_settings' => $settings ? !empty($settings->sales_mail_settings) : false
-            ]);
             return;
         }
 
@@ -1240,18 +1227,8 @@ class CustomerController extends Controller
         $salesMailSettings = $settings->sales_mail_settings;
 
         if (empty($salesMailSettings['status']) || !$salesMailSettings['status'] || empty($salesMailSettings['message_template'])) {
-            \Log::warning('sendConfirmationEmail: Sales mail settings aktif değil veya template eksik', [
-                'customer_id' => $customer->id,
-                'status' => $salesMailSettings['status'] ?? null,
-                'has_template' => !empty($salesMailSettings['message_template'])
-            ]);
             return;
         }
-
-        \Log::info('sendConfirmationEmail: SMTP bağlantısı kuruluyor', [
-            'host' => $smtpSettings['smtp_host'],
-            'port' => $smtpSettings['smtp_port']
-        ]);
 
         $transport = new EsmtpTransport($smtpSettings['smtp_host'], $smtpSettings['smtp_port']);
         $transport->setUsername($smtpSettings['smtp_username']);
@@ -1259,12 +1236,7 @@ class CustomerController extends Controller
 
         try {
             $transport->start();
-            \Log::info('sendConfirmationEmail: SMTP bağlantısı başarılı');
         } catch (\Exception $e) {
-            \Log::error('sendConfirmationEmail: SMTP bağlantı hatası', [
-                'customer_id' => $customer->id,
-                'error' => $e->getMessage()
-            ]);
             return;
         }
 
@@ -1313,21 +1285,9 @@ class CustomerController extends Controller
             ->subject($salesMailSettings['subject'] ?? 'Appointment and Accommodation Confirmation')
             ->html(nl2br($emailContent));
 
-        \Log::info('sendConfirmationEmail: Mail gönderiliyor', [
-            'customer_id' => $customer->id,
-            'to' => $customer->email,
-            'subject' => $salesMailSettings['subject'] ?? 'Appointment and Accommodation Confirmation'
-        ]);
-
         try {
             $mailer->send($email);
-            \Log::info('sendConfirmationEmail: Mail başarıyla gönderildi', ['customer_id' => $customer->id]);
         } catch (\Exception $e) {
-            \Log::error('sendConfirmationEmail: Mail gönderme hatası', [
-                'customer_id' => $customer->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
         }
     }
 
@@ -1642,32 +1602,5 @@ class CustomerController extends Controller
             $ids[] = $child->id;
             $this->collectChildCategoryIds($child, $ids);
         }
-    }
-
-    // Geçici test metodu - sonra silinecek
-    public function testSalesEmail($customerId)
-    {
-        \Log::info('testSalesEmail: Test başlatıldı', ['customer_id' => $customerId]);
-
-        $customer = Customer::with(['organization', 'user', 'category', 'services', 'status'])->find($customerId);
-
-        if (!$customer) {
-            \Log::error('testSalesEmail: Müşteri bulunamadı', ['customer_id' => $customerId]);
-            return response()->json(['error' => 'Müşteri bulunamadı'], 404);
-        }
-
-        \Log::info('testSalesEmail: Müşteri bulundu', [
-            'customer_id' => $customer->id,
-            'email' => $customer->email,
-            'travel_info' => $customer->travel_info
-        ]);
-
-        $this->sendConfirmationEmail($customer);
-
-        return response()->json([
-            'message' => 'Test tamamlandı, loglara bakın',
-            'customer_id' => $customer->id,
-            'customer_email' => $customer->email
-        ]);
     }
 }
