@@ -18,7 +18,6 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use libphonenumber\PhoneNumberFormat;
 use libphonenumber\PhoneNumberUtil;
 use Symfony\Component\Mailer\Mailer;
@@ -528,15 +527,6 @@ class CustomerController extends Controller
 
     public function handleCustomerEntry($data)
     {
-        Log::info('=== HANDLE CUSTOMER ENTRY START ===');
-        Log::info('Incoming customer data:', [
-            'name' => $data['name'] ?? null,
-            'phone' => $data['phone'] ?? null,
-            'email' => $data['email'] ?? null,
-            'category_id' => $data['category_id'] ?? null,
-            'organization_id' => $data['organization_id'] ?? null,
-        ]);
-
         $organizationId = $data['organization_id'];
 
         if (!empty($data['phone'])) {
@@ -648,30 +638,14 @@ class CustomerController extends Controller
                         $this->collectChildCategoryIds($parentCategory, $categoryIdsForCounting);
                     }
 
-                    Log::info('=== TAG BASED ASSIGNMENT DEBUG ===');
-                    Log::info('Filtered users for tag assignment:', [
-                        'user_ids' => $filteredUsers->pluck('id')->toArray(),
-                        'user_names' => $filteredUsers->pluck('name')->toArray(),
-                    ]);
-                    Log::info('Category IDs for counting:', ['category_ids' => $categoryIdsForCounting]);
-
                     $lastAssignedCustomer = Customer::where('organization_id', $organizationId)
                         ->whereIn('user_id', $filteredUsers->pluck('id'))
                         ->whereIn('category_id', $categoryIdsForCounting)
                         ->orderBy('created_at', 'desc')
                         ->first();
 
-                    Log::info('Last assigned customer:', [
-                        'customer_id' => $lastAssignedCustomer?->id,
-                        'customer_name' => $lastAssignedCustomer?->name,
-                        'assigned_user_id' => $lastAssignedCustomer?->user_id,
-                        'category_id' => $lastAssignedCustomer?->category_id,
-                        'created_at' => $lastAssignedCustomer?->created_at,
-                    ]);
-
                     if (!$lastAssignedCustomer) {
                         $data['user_id'] = $filteredUsers->first()->id;
-                        Log::info('No last assigned customer found, assigning to first user:', ['user_id' => $data['user_id']]);
                         break;
                     }
 
@@ -679,33 +653,20 @@ class CustomerController extends Controller
                         return $user->id === $lastAssignedCustomer->user_id;
                     });
 
-                    Log::info('Last user index in filtered users:', ['lastUserIndex' => $lastUserIndex]);
-
                     $nextUserIndex = ($lastUserIndex + 1) % $filteredUsers->count();
                     $data['user_id'] = $filteredUsers->values()->get($nextUserIndex)->id;
-
-                    Log::info('Next user assignment:', [
-                        'nextUserIndex' => $nextUserIndex,
-                        'assigned_user_id' => $data['user_id'],
-                        'total_users' => $filteredUsers->count(),
-                    ]);
                     break;
                 }
             }
         }
 
         if (empty($data['user_id'])) {
-            Log::info('No user_id from tag assignment, checking settings-based assignment');
-
             $settings = Setting::where('organization_id', $organizationId)->first();
 
             if ($settings && !empty($settings->lead_assignment_settings)) {
                 $assignmentSettings = $settings->lead_assignment_settings;
-                Log::info('Lead assignment settings:', ['settings' => $assignmentSettings]);
 
                 if (isset($assignmentSettings['strategy']) && $assignmentSettings['strategy'] === 'sequential') {
-                    Log::info('=== SEQUENTIAL STRATEGY ASSIGNMENT DEBUG ===');
-
                     $users = User::where('organization_id', $organizationId)
                         ->where('is_active', true)
                         ->whereHas('roles', function ($query) {
@@ -713,11 +674,6 @@ class CustomerController extends Controller
                         })
                         ->orderBy('id')
                         ->get();
-
-                    Log::info('Initial users (before work_schedule filter):', [
-                        'user_ids' => $users->pluck('id')->toArray(),
-                        'user_names' => $users->pluck('name')->toArray(),
-                    ]);
 
                     $users = $users->filter(function ($user) {
                         $workSchedule = $user->work_schedule;
@@ -727,30 +683,15 @@ class CustomerController extends Controller
                         return $workSchedule['is_active'] === true;
                     });
 
-                    Log::info('Users after work_schedule filter:', [
-                        'user_ids' => $users->pluck('id')->toArray(),
-                        'user_names' => $users->pluck('name')->toArray(),
-                    ]);
-
                     if ($customerLanguage) {
                         $filteredUsers = $users->filter(function ($user) use ($customerLanguage) {
                             return !empty($user->languages) && in_array($customerLanguage, $user->languages);
                         });
 
-                        Log::info('Language filter applied:', [
-                            'customerLanguage' => $customerLanguage,
-                            'filtered_user_ids' => $filteredUsers->pluck('id')->toArray(),
-                        ]);
-
                         if ($filteredUsers->isNotEmpty()) {
                             $users = $filteredUsers;
                         }
                     }
-
-                    Log::info('Final users for sequential assignment:', [
-                        'user_ids' => $users->pluck('id')->toArray(),
-                        'user_names' => $users->pluck('name')->toArray(),
-                    ]);
 
                     if ($users->isNotEmpty()) {
                         $categoryIdsForCounting = [4];
@@ -759,58 +700,27 @@ class CustomerController extends Controller
                             $this->collectChildCategoryIds($parentCategory, $categoryIdsForCounting);
                         }
 
-                        Log::info('Category IDs for counting:', ['category_ids' => $categoryIdsForCounting]);
-
                         $lastAssignedCustomer = Customer::whereIn('user_id', $users->pluck('id'))
                             ->where('organization_id', $organizationId)
                             ->whereIn('category_id', $categoryIdsForCounting)
                             ->orderBy('created_at', 'desc')
                             ->first();
 
-                        Log::info('Last assigned customer:', [
-                            'customer_id' => $lastAssignedCustomer?->id,
-                            'customer_name' => $lastAssignedCustomer?->name,
-                            'assigned_user_id' => $lastAssignedCustomer?->user_id,
-                            'category_id' => $lastAssignedCustomer?->category_id,
-                            'created_at' => $lastAssignedCustomer?->created_at,
-                        ]);
-
                         if (!$lastAssignedCustomer) {
                             $data['user_id'] = $users->first()->id;
-                            Log::info('No last assigned customer found, assigning to first user:', ['user_id' => $data['user_id']]);
                         } else {
                             $lastUserIndex = $users->values()->search(function ($user) use ($lastAssignedCustomer) {
                                 return $user->id === $lastAssignedCustomer->user_id;
                             });
 
-                            Log::info('Last user index calculation:', [
-                                'lastUserIndex' => $lastUserIndex,
-                                'last_customer_user_id' => $lastAssignedCustomer->user_id,
-                            ]);
-
                             $nextUserIndex = ($lastUserIndex + 1) % $users->count();
                             $data['user_id'] = $users->values()->get($nextUserIndex)->id;
-
-                            Log::info('Next user assignment:', [
-                                'nextUserIndex' => $nextUserIndex,
-                                'assigned_user_id' => $data['user_id'],
-                                'total_users' => $users->count(),
-                            ]);
                         }
-                    } else {
-                        Log::info('No users available for sequential assignment');
                     }
                 } elseif (isset($assignmentSettings['strategy']) && $assignmentSettings['strategy'] === 'working_hours') {
-                    Log::info('=== WORKING HOURS STRATEGY ASSIGNMENT DEBUG ===');
-
                     $now = Carbon::now();
                     $currentDay = $now->dayOfWeek;
                     $currentTime = $now->format('H:i');
-
-                    Log::info('Current time info:', [
-                        'currentDay' => $currentDay,
-                        'currentTime' => $currentTime,
-                    ]);
 
                     $users = User::where('organization_id', $organizationId)
                         ->where('is_active', true)
@@ -820,20 +730,10 @@ class CustomerController extends Controller
                         ->whereNotNull('work_schedule')
                         ->get();
 
-                    Log::info('Initial users (with work_schedule):', [
-                        'user_ids' => $users->pluck('id')->toArray(),
-                        'user_names' => $users->pluck('name')->toArray(),
-                    ]);
-
                     if ($customerLanguage) {
                         $filteredUsers = $users->filter(function ($user) use ($customerLanguage) {
                             return !empty($user->languages) && in_array($customerLanguage, $user->languages);
                         });
-
-                        Log::info('Language filter applied:', [
-                            'customerLanguage' => $customerLanguage,
-                            'filtered_user_ids' => $filteredUsers->pluck('id')->toArray(),
-                        ]);
 
                         if ($filteredUsers->isNotEmpty()) {
                             $users = $filteredUsers;
@@ -858,11 +758,6 @@ class CustomerController extends Controller
                         return false;
                     });
 
-                    Log::info('Available users after working hours filter:', [
-                        'user_ids' => $availableUsers->pluck('id')->toArray(),
-                        'user_names' => $availableUsers->pluck('name')->toArray(),
-                    ]);
-
                     if ($availableUsers->isNotEmpty()) {
                         $categoryIdsForCounting = [4];
                         $parentCategory = Category::find(4);
@@ -870,64 +765,29 @@ class CustomerController extends Controller
                             $this->collectChildCategoryIds($parentCategory, $categoryIdsForCounting);
                         }
 
-                        Log::info('Category IDs for counting:', ['category_ids' => $categoryIdsForCounting]);
-
                         $lastAssignedCustomer = Customer::whereIn('user_id', $availableUsers->pluck('id'))
                             ->where('organization_id', $organizationId)
                             ->whereIn('category_id', $categoryIdsForCounting)
                             ->orderBy('created_at', 'desc')
                             ->first();
 
-                        Log::info('Last assigned customer:', [
-                            'customer_id' => $lastAssignedCustomer?->id,
-                            'customer_name' => $lastAssignedCustomer?->name,
-                            'assigned_user_id' => $lastAssignedCustomer?->user_id,
-                            'category_id' => $lastAssignedCustomer?->category_id,
-                            'created_at' => $lastAssignedCustomer?->created_at,
-                        ]);
-
                         if (!$lastAssignedCustomer) {
                             $data['user_id'] = $availableUsers->first()->id;
-                            Log::info('No last assigned customer found, assigning to first user:', ['user_id' => $data['user_id']]);
                         } else {
                             $lastUserIndex = $availableUsers->values()->search(function ($user) use ($lastAssignedCustomer) {
                                 return $user->id === $lastAssignedCustomer->user_id;
                             });
 
-                            Log::info('Last user index calculation:', [
-                                'lastUserIndex' => $lastUserIndex,
-                                'last_customer_user_id' => $lastAssignedCustomer->user_id,
-                            ]);
-
                             $nextUserIndex = ($lastUserIndex + 1) % $availableUsers->count();
                             $data['user_id'] = $availableUsers->values()->get($nextUserIndex)->id;
-
-                            Log::info('Next user assignment:', [
-                                'nextUserIndex' => $nextUserIndex,
-                                'assigned_user_id' => $data['user_id'],
-                                'total_users' => $availableUsers->count(),
-                            ]);
                         }
-                    } else {
-                        Log::info('No available users for working hours assignment');
                     }
                 }
             }
         }
 
-        Log::info('=== FINAL ASSIGNMENT RESULT ===');
-        Log::info('Creating customer with user_id:', ['user_id' => $data['user_id'] ?? null]);
-
         $customer = Customer::create($data);
         $customer->load('organization', 'user', 'category', 'services', 'status');
-
-        Log::info('Customer created:', [
-            'customer_id' => $customer->id,
-            'customer_name' => $customer->name,
-            'assigned_user_id' => $customer->user_id,
-            'assigned_user_name' => $customer->user?->name,
-        ]);
-        Log::info('=== HANDLE CUSTOMER ENTRY END ===');
 
         if ($customer->user_id) {
             $this->sendCustomerMessages($customer, $category, $tag);
