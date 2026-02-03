@@ -96,6 +96,14 @@ class SegmentController extends Controller
             $query->where('organization_id', $organizationId);
         }
 
+        // User bazlı filtreleme (admin olmayan danışmanlar sadece kendi müşterilerini görsün)
+        $user = auth()->user();
+        $userRoleIds = $user->roles->pluck('id')->toArray();
+
+        if (in_array(3, $userRoleIds) || in_array(7, $userRoleIds) && !in_array(1, $userRoleIds) && !in_array(2, $userRoleIds)) {
+            $query->where('user_id', $user->id);
+        }
+
         // Segment filtrelerini uygula
         $this->applyFiltersFromArray($query, $segment->filters);
 
