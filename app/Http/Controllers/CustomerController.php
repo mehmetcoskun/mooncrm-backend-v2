@@ -602,16 +602,35 @@ class CustomerController extends Controller
                     }
                 }
 
+                // Etiketleri bul: etiketin kategorileri ve tüm alt kategorileri kontrol edilir.
+                // Örneğin etiket X kategorisine sahipse, X1, X2 gibi alt kategorilerden
+                // gelen formlar da bu etiketle eşleşir.
+                $formCategoryId = $category->id;
                 $tags = Tag::where('organization_id', $organizationId)
-                    ->whereHas('categories', function ($query) use ($categoryIds) {
-                        $query->whereIn('categories.id', $categoryIds);
-                    })
                     ->with([
+                        'categories',
                         'users' => function ($query) {
                             $query->orderBy('id');
                         }
                     ])
-                    ->get();
+                    ->get()
+                    ->filter(function ($tagItem) use ($categoryIds, $formCategoryId) {
+                        foreach ($tagItem->categories as $tagCategory) {
+                            // 1. Yukarı doğru eşleşme: etiketin kategorisi formun
+                            // kategorisi veya üst kategorileri arasında mı?
+                            if (in_array($tagCategory->id, $categoryIds)) {
+                                return true;
+                            }
+                            // 2. Aşağı doğru eşleşme: formun kategorisi etiketin
+                            // kategorisinin alt kategorileri arasında mı?
+                            $childIds = [];
+                            $this->collectChildCategoryIds($tagCategory, $childIds);
+                            if (in_array($formCategoryId, $childIds)) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    });
 
                 foreach ($tags as $tag) {
                     if ($tag->users->isEmpty()) {
