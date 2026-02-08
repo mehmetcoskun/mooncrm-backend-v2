@@ -593,42 +593,25 @@ class CustomerController extends Controller
         if (!empty($data['category_id'])) {
             $category = Category::find($data['category_id']);
             if ($category) {
-                // Müşterinin kategorisini ve tüm parent kategorilerini topla
-                $customerCategoryIds = [$category->id];
+                $categoryIds = [$category->id];
                 $parentCategory = $category;
                 while ($parentCategory->parent_id) {
                     $parentCategory = Category::find($parentCategory->parent_id);
                     if ($parentCategory) {
-                        $customerCategoryIds[] = $parentCategory->id;
+                        $categoryIds[] = $parentCategory->id;
                     }
                 }
 
-                // Etikete bağlı kategorilerin alt kategorilerini de dahil ederek eşleştirme yap
-                // Önce tüm etiketleri al
                 $tags = Tag::where('organization_id', $organizationId)
-                    ->with(['categories', 'users' => function ($query) {
-                        $query->orderBy('id');
-                    }])
-                    ->get()
-                    ->filter(function ($tag) use ($customerCategoryIds) {
-                        if ($tag->categories->isEmpty()) {
-                            return false;
+                    ->whereHas('categories', function ($query) use ($categoryIds) {
+                        $query->whereIn('categories.id', $categoryIds);
+                    })
+                    ->with([
+                        'users' => function ($query) {
+                            $query->orderBy('id');
                         }
-
-                        // Etiketin kategorilerini ve alt kategorilerini topla
-                        $tagCategoryIds = [];
-                        foreach ($tag->categories as $tagCategory) {
-                            $tagCategoryIds[] = $tagCategory->id;
-                            // Alt kategorileri de ekle
-                            $childIds = [];
-                            $this->collectChildCategoryIds($tagCategory, $childIds);
-                            $tagCategoryIds = array_merge($tagCategoryIds, $childIds);
-                        }
-                        $tagCategoryIds = array_unique($tagCategoryIds);
-
-                        // Müşterinin kategorisi veya parent'ları, etiketin kategori ağacında mı?
-                        return !empty(array_intersect($customerCategoryIds, $tagCategoryIds));
-                    });
+                    ])
+                    ->get();
 
                 foreach ($tags as $tag) {
                     if ($tag->users->isEmpty()) {
