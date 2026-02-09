@@ -14,7 +14,6 @@ return new class extends Migration
         Schema::create('organizations', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('logo')->nullable();
             $table->string('code')->unique();
             $table->date('trial_ends_at')->nullable();
             $table->date('license_ends_at')->nullable();

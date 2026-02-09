@@ -607,7 +607,6 @@ class CustomerController extends Controller
                         $query->whereIn('categories.id', $categoryIds);
                     })
                     ->with([
-                        'categories',
                         'users' => function ($query) {
                             $query->orderBy('id');
                         }
@@ -641,10 +640,10 @@ class CustomerController extends Controller
                         $filteredUsers = $activeUsers;
                     }
 
-                    $tagCategoryIds = $tag->categories->pluck('id')->toArray();
-                    $categoryIdsForCounting = $tagCategoryIds;
-                    foreach ($tag->categories as $tagCategory) {
-                        $this->collectChildCategoryIds($tagCategory, $categoryIdsForCounting);
+                    $categoryIdsForCounting = [4];
+                    $parentCategory = Category::find(4);
+                    if ($parentCategory) {
+                        $this->collectChildCategoryIds($parentCategory, $categoryIdsForCounting);
                     }
 
                     $lastAssignedCustomer = Customer::where('organization_id', $organizationId)
