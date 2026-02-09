@@ -89,19 +89,32 @@ class FacebookLeadController extends Controller
 
             $pageAccessToken = $page['access_token'] ?? $accessToken;
 
-            $formsResponse = Http::get("https://graph.facebook.com/v24.0/{$pageId}/leadgen_forms", [
+            // Pagination ile tüm formları al
+            $allForms = [];
+            $nextUrl = "https://graph.facebook.com/v24.0/{$pageId}/leadgen_forms?" . http_build_query([
                 'access_token' => $pageAccessToken,
-                'fields' => 'id,name,status'
+                'fields' => 'id,name,status',
+                'limit' => 100
             ]);
 
-            if (!$formsResponse->successful()) {
-                return response()->json([
-                    'data' => [],
-                ]);
+            while ($nextUrl) {
+                $formsResponse = Http::get($nextUrl);
+
+                if (!$formsResponse->successful()) {
+                    break;
+                }
+
+                $formsData = $formsResponse->json();
+                
+                if (isset($formsData['data']) && is_array($formsData['data'])) {
+                    $allForms = array_merge($allForms, $formsData['data']);
+                }
+
+                // Sonraki sayfa varsa devam et
+                $nextUrl = $formsData['paging']['next'] ?? null;
             }
 
-            $formsData = $formsResponse->json();
-            $activeForms = array_values(array_filter($formsData['data'] ?? [], fn($form) => ($form['status'] ?? '') === 'ACTIVE'));
+            $activeForms = array_values(array_filter($allForms, fn($form) => ($form['status'] ?? '') === 'ACTIVE'));
 
             return response()->json([
                 'data' => $activeForms,
@@ -171,20 +184,27 @@ class FacebookLeadController extends Controller
             $pageId = $page['id'];
             $pageName = $page['name'];
 
-            $formsResponse = Http::get("https://graph.facebook.com/v24.0/{$pageId}/leadgen_forms", [
+            // Pagination ile tüm formları al ve istenen formu bul
+            $form = null;
+            $nextUrl = "https://graph.facebook.com/v24.0/{$pageId}/leadgen_forms?" . http_build_query([
                 'access_token' => $pageAccessToken,
-                'fields' => 'id,name,status'
+                'fields' => 'id,name,status',
+                'limit' => 100
             ]);
 
-            if (!$formsResponse->successful()) {
-                return response()->json([
-                    'data' => [],
-                    'paging' => null,
-                ]);
-            }
+            while ($nextUrl && !$form) {
+                $formsResponse = Http::get($nextUrl);
 
-            $formsData = $formsResponse->json();
-            $form = collect($formsData['data'] ?? [])->firstWhere('id', $requestedFormId);
+                if (!$formsResponse->successful()) {
+                    break;
+                }
+
+                $formsData = $formsResponse->json();
+                $form = collect($formsData['data'] ?? [])->firstWhere('id', $requestedFormId);
+
+                // Sonraki sayfa varsa devam et
+                $nextUrl = $formsData['paging']['next'] ?? null;
+            }
 
             if (!$form) {
                 return response()->json([
