@@ -217,17 +217,23 @@ class StatisticController extends Controller
             'children' => []
         ];
 
-        $filteredChildren = $category->children;
+        // Alt kategorileri organization_id'ye göre filtrele
+        $filteredChildren = $category->children()
+            ->where(function ($query) use ($organizationId) {
+                $query->where('organization_id', $organizationId)
+                    ->orWhere('is_global', true);
+            })
+            ->get();
         
         if (!empty($selectedCategoryIds)) {
-            $filteredChildren = $category->children->filter(function ($child) use ($selectedCategoryIds) {
+            $filteredChildren = $filteredChildren->filter(function ($child) use ($selectedCategoryIds) {
                 return in_array($child->id, $selectedCategoryIds) || 
                        $this->isAncestorOfSelectedCategories($child, $selectedCategoryIds);
             });
         }
         
         if (!empty($excludeCategoryIds)) {
-            $filteredChildren = $category->children->filter(function ($child) use ($excludeCategoryIds) {
+            $filteredChildren = $filteredChildren->filter(function ($child) use ($excludeCategoryIds) {
                 return !in_array($child->id, $excludeCategoryIds);
             });
         }
