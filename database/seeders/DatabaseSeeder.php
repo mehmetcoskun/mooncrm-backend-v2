@@ -191,6 +191,7 @@ class DatabaseSeeder extends Seeder
             ['title' => 'Ayarlar', 'slug' => 'setting_WelcomeMessage', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Ayarlar', 'slug' => 'setting_Vapi', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Ayarlar', 'slug' => 'setting_UserNotification', 'is_custom' => false, 'is_global' => true],
+            ['title' => 'Ayarlar', 'slug' => 'setting_GroupNotification', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Ayarlar', 'slug' => 'setting_Facebook', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Ayarlar', 'slug' => 'setting_Tiktok', 'is_custom' => false, 'is_global' => true],
 
