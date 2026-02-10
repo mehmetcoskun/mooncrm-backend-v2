@@ -23,7 +23,7 @@ class SettingController extends Controller
 
     public function updateOrCreate(Request $request)
     {
-        if (Gate::none(['setting_Mail', 'setting_Sms', 'setting_Whatsapp', 'setting_DailyReport', 'setting_SalesMail', 'setting_LeadAssignment', 'setting_WelcomeMessage']))
+        if (Gate::none(['setting_Mail', 'setting_Sms', 'setting_Whatsapp', 'setting_DailyReport', 'setting_SalesMail', 'setting_LeadAssignment', 'setting_WelcomeMessage', 'setting_GroupNotification']))
             return response()->json(['message' => 'Unauthorized'], 403);
 
         $organizationId = auth()->user()->organization_id ?? $request->header('X-Organization-Id');

@@ -18,6 +18,7 @@ class Setting extends Model
         'sales_notification_settings',
         'vapi_settings',
         'user_notification_settings',
+        'group_notification_settings',
         'facebook_settings',
     ];
 
@@ -32,6 +33,7 @@ class Setting extends Model
         'sales_notification_settings' => 'array',
         'vapi_settings' => 'array',
         'user_notification_settings' => 'array',
+        'group_notification_settings' => 'array',
         'facebook_settings' => 'array',
     ];
 

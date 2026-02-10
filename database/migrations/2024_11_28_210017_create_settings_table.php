@@ -24,6 +24,7 @@ return new class extends Migration
             $table->json('sales_notification_settings')->nullable();
             $table->json('vapi_settings')->nullable();
             $table->json('user_notification_settings')->nullable();
+            $table->json('group_notification_settings')->nullable();
             $table->json('facebook_settings')->nullable();
             $table->timestamps();
         });

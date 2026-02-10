@@ -105,4 +105,34 @@ class AuthController extends Controller
             'message' => 'Şifreniz başarıyla değiştirildi.'
         ]);
     }
+
+    public function updateProfile(Request $request)
+    {
+        $user = $request->user();
+        
+        $data = $request->all();
+
+        if (!empty($data['email'])) {
+            $existingUser = User::where('email', $data['email'])
+                ->where('id', '!=', $user->id)
+                ->first();
+
+            if ($existingUser) {
+                return response()->json([
+                    'message' => 'Bu e-posta adresi ile kayıtlı bir kullanıcı zaten mevcut.',
+                ], 422);
+            }
+        }
+
+        if (!empty($data['password'])) {
+            $data['password'] = Hash::make($data['password']);
+        } else {
+            unset($data['password']);
+        }
+
+        $user->update($data);
+        $user->load('organization', 'roles.permissions');
+
+        return response()->json($user);
+    }
 }

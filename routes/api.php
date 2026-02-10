@@ -58,6 +58,7 @@ Route::post('/vapi/webhook', [VapiController::class, 'webhook']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/change-password', [AuthController::class, 'changePassword']);
+    Route::put('/auth/profile', [AuthController::class, 'updateProfile']);
 
     Route::prefix('/auth/two-factor')->controller(TwoFactorAuthController::class)->group(function () {
         Route::post('/qr-code', 'generateQrCode');

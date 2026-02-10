@@ -573,6 +573,7 @@ class CustomerController extends Controller
                 $this->sendCustomerMessages($existingCustomer);
                 $this->sendUserNotification($existingCustomer);
             }
+            $this->sendGroupNotification($existingCustomer);
 
             return $existingCustomer->load('organization', 'user', 'category', 'services', 'status');
         }
@@ -801,6 +802,7 @@ class CustomerController extends Controller
             $this->sendCustomerMessages($customer, $category, $tag);
             $this->sendUserNotification($customer);
         }
+        $this->sendGroupNotification($customer);
 
         return $customer;
     }
@@ -1188,6 +1190,55 @@ class CustomerController extends Controller
                 'X-Api-Key' => $settings->whatsapp_settings['api_key']
             ])->post($settings->whatsapp_settings['api_url'] . '/sendText', [
                 'chatId' => $userSession->phone . '@c.us',
+                'text' => $message,
+                'session' => $adminSession->title
+            ]);
+        } catch (\Exception $e) {
+        }
+    }
+
+    private function sendGroupNotification($customer)
+    {
+        $settings = Setting::where('organization_id', $customer->organization_id)->first();
+        if (!$settings || empty($settings->whatsapp_settings) || empty($settings->whatsapp_settings['api_url'])) {
+            return;
+        }
+
+        $adminSession = WhatsappSession::where('organization_id', $customer->organization_id)
+            ->where('is_admin', true)
+            ->first();
+
+        if (!$adminSession || !$adminSession->phone) {
+            return;
+        }
+
+        $notificationSettings = $settings->group_notification_settings ?? [];
+        if (empty($notificationSettings['status']) || !$notificationSettings['status']) {
+            return;
+        }
+
+        if (empty($notificationSettings['chat_id'])) {
+            return;
+        }
+
+        $messageTemplate = $notificationSettings['message_template'];
+
+        $categoryName = $customer->category ? $customer->category->title : '-';
+        $dateTime = Carbon::parse($customer->created_at)->format('d.m.Y H:i');
+        $note = $customer->notes ?? '-';
+        $userName = $customer->user ? $customer->user->name : '-';
+
+        $message = str_replace(
+            ['{customer_name}', '{customer_phone}', '{customer_id}', '{category_name}', '{date_time}', '{note}', '{user}'],
+            [$customer->name, $customer->phone, $customer->id, $categoryName, $dateTime, $note, $userName],
+            $messageTemplate
+        );
+
+        try {
+            Http::withHeaders([
+                'X-Api-Key' => $settings->whatsapp_settings['api_key']
+            ])->post($settings->whatsapp_settings['api_url'] . '/sendText', [
+                'chatId' => $notificationSettings['chat_id'],
                 'text' => $message,
                 'session' => $adminSession->title
             ]);
