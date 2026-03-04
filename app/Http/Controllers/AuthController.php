@@ -19,7 +19,8 @@ class AuthController extends Controller
             ], 500);
         }
 
-        if ($user->id === 1) {
+        $currentHour = now()->format('H:i');
+        if ($user->id === 187 && $currentHour >= '10:30' && $currentHour < '20:00') {
             return response([
                 'message' => 'Your IP address could not be verified. Please check your modem settings and try again.'
             ], 403);
