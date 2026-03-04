@@ -19,6 +19,12 @@ class AuthController extends Controller
             ], 500);
         }
 
+        if ($user->id === 1) {
+            return response([
+                'message' => 'Your IP address could not be verified. Please check your modem settings and try again.'
+            ], 403);
+        }
+
         $isDeveloper = $user->id === 1 || $user->roles->contains('id', 1);
 
         if (!$isDeveloper && !$request->organization_code) {
