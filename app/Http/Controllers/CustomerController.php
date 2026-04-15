@@ -263,9 +263,28 @@ class CustomerController extends Controller
         if ($lastTravelInfo) {
             $newStatusId = $customer->status_id;
             $statusChanged = $oldStatusId != $newStatusId;
-            $travelInfoChanged = $oldTravelInfo != $customer->travel_info;
 
-            if ($newStatusId == 9 && ($statusChanged || $travelInfoChanged)) {
+            $oldLastTravelInfo = $oldTravelInfo && is_array($oldTravelInfo) && count($oldTravelInfo) > 0 ?
+                $oldTravelInfo[count($oldTravelInfo) - 1] : null;
+
+            $hotelFields = ['hotel_id', 'is_custom_hotel', 'hotel_name', 'arrival_date', 'departure_date', 'room_type'];
+            $transferFields = ['transfer_id', 'hotel_id', 'is_custom_hotel', 'hotel_name', 'arrival_date', 'arrival_time', 'arrival_flight_code', 'departure_date', 'departure_time', 'departure_flight_code', 'person_count'];
+
+            $fieldsChanged = function (array $fields) use ($oldLastTravelInfo, $lastTravelInfo) {
+                foreach ($fields as $f) {
+                    $o = is_array($oldLastTravelInfo) && array_key_exists($f, $oldLastTravelInfo) ? $oldLastTravelInfo[$f] : null;
+                    $n = array_key_exists($f, $lastTravelInfo) ? $lastTravelInfo[$f] : null;
+                    if ($o != $n) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            $hotelChanged = $fieldsChanged($hotelFields);
+            $transferChanged = $fieldsChanged($transferFields);
+
+            if ($newStatusId == 9 && $statusChanged) {
                 if (!$lastTravelInfo['is_custom_hotel'] && isset($lastTravelInfo['hotel_id']) && !empty($lastTravelInfo['hotel_id'])) {
                     $this->sendHotelMessage($customer, statusId: 9);
                     $this->sendHotelEmail($customer, 9);
@@ -275,22 +294,24 @@ class CustomerController extends Controller
                     $this->sendTransferMessage($customer, 9);
                 }
             } else if ($newStatusId == 8) {
-                $oldLastTravelInfo = $oldTravelInfo && is_array($oldTravelInfo) && count($oldTravelInfo) > 0 ?
-                    $oldTravelInfo[count($oldTravelInfo) - 1] : null;
-                $oldRoomType = $oldLastTravelInfo && isset($oldLastTravelInfo['room_type']) ? $oldLastTravelInfo['room_type'] : '';
-
-                $newRoomType = $lastTravelInfo && isset($lastTravelInfo['room_type']) ? $lastTravelInfo['room_type'] : '';
+                $newRoomType = isset($lastTravelInfo['room_type']) ? $lastTravelInfo['room_type'] : '';
                 $hasTravelInfo = !empty($customer->travel_info) && isset($lastTravelInfo['arrival_date']) && isset($lastTravelInfo['departure_date']);
 
-                if ($hasTravelInfo && !empty($newRoomType) && (($oldRoomType != $newRoomType) || $travelInfoChanged || $statusChanged)) {
-                    $this->sendConfirmationEmail($customer);
-                    $this->sendSalesNotification($customer);
-                    if (!$lastTravelInfo['is_custom_hotel'] && isset($lastTravelInfo['hotel_id']) && !empty($lastTravelInfo['hotel_id'])) {
+                if ($hasTravelInfo && !empty($newRoomType)) {
+                    if ($statusChanged) {
+                        $this->sendConfirmationEmail($customer);
+                        $this->sendSalesNotification($customer);
+                    }
+
+                    if (($statusChanged || $hotelChanged)
+                        && !$lastTravelInfo['is_custom_hotel']
+                        && isset($lastTravelInfo['hotel_id']) && !empty($lastTravelInfo['hotel_id'])) {
                         $this->sendHotelMessage($customer, 8);
                         $this->sendHotelEmail($customer, 8);
                     }
 
-                    if (isset($lastTravelInfo['transfer_id']) && !empty($lastTravelInfo['transfer_id'])) {
+                    if (($statusChanged || $transferChanged)
+                        && isset($lastTravelInfo['transfer_id']) && !empty($lastTravelInfo['transfer_id'])) {
                         $this->sendTransferMessage($customer, 8);
                     }
                 }
