@@ -64,9 +64,12 @@ class DashboardController extends Controller
         $monthlyProposals = [];
         $monthlySales = [];
 
-        for ($i = 11; $i >= 0; $i--) {
-            $startDate = Carbon::now()->subMonths($i)->startOfMonth();
-            $endDate = Carbon::now()->subMonths($i)->endOfMonth();
+        $currentMonth = Carbon::now()->month;
+        $currentYear = Carbon::now()->year;
+
+        for ($month = 1; $month <= $currentMonth; $month++) {
+            $startDate = Carbon::create($currentYear, $month, 1)->startOfMonth();
+            $endDate = Carbon::create($currentYear, $month, 1)->endOfMonth();
 
             $customerCount = (clone $customersQuery)
                 ->whereBetween('customers.created_at', [$startDate, $endDate])
