@@ -101,16 +101,8 @@ class StatisticController extends Controller
         $customersQuery = Customer::where('organization_id', $organizationId);
 
         // Category filtresi hariç tüm filtreleri uygula (category özel olarak işleniyor)
-        // Satış tarihi filtresi genel müşteri sayımını bozmamalı; sadece satış sayımına uygulanır
         $tempRequest = clone $request;
-        $tempRequest->merge([
-            'categories' => null,
-            'categories_operator' => null,
-            'sales_date' => null,
-            'sales_date_operator' => null,
-            'sales_date_start' => null,
-            'sales_date_end' => null,
-        ]);
+        $tempRequest->merge(['categories' => null, 'categories_operator' => null]);
         $this->applyAdvancedFilters($customersQuery, $tempRequest);
 
         $totalCustomers = $customersQuery->count();
@@ -178,17 +170,12 @@ class StatisticController extends Controller
             ->where('organization_id', $organizationId);
 
         // Category filtresi hariç tüm filtreleri uygula
-        // Satış tarihi filtresi sadece satış sayımına uygulanır; iletişim/teklif/iptal sayımlarını etkilemez
-        $generalFilters = $filters;
-        unset($generalFilters['categories']);
-        unset($generalFilters['categories_operator']);
-        unset($generalFilters['sales_date']);
-        unset($generalFilters['sales_date_operator']);
-        unset($generalFilters['sales_date_start']);
-        unset($generalFilters['sales_date_end']);
-
-        $generalRequest = new Request($generalFilters);
-        $this->applyAdvancedFilters($customersQuery, $generalRequest);
+        $tempFilters = $filters;
+        unset($tempFilters['categories']);
+        unset($tempFilters['categories_operator']);
+        
+        $request = new Request($tempFilters);
+        $this->applyAdvancedFilters($customersQuery, $request);
 
         $contacts = $customersQuery->count();
 
@@ -196,9 +183,9 @@ class StatisticController extends Controller
             ->whereHas('services')
             ->count();
 
-        $salesQuery = (clone $customersQuery)->where('status_id', 8);
-        $this->applySalesDateFilter($salesQuery, new Request($filters));
-        $sales = $salesQuery->count();
+        $sales = (clone $customersQuery)
+            ->where('status_id', 8)
+            ->count();
 
         $canceledSales = (clone $customersQuery)
             ->where('status_id', 9)
