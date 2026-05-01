@@ -5,6 +5,7 @@ use App\Console\Commands\RefreshFacebookTokens;
 use App\Console\Commands\SendDailyReport;
 use App\Http\Middleware\CheckPasswordExpiry;
 use App\Http\Middleware\EnsureUserHasPermission;
+use App\Http\Middleware\ExtendAccessTokenExpiry;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -23,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ])
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->api(append: [
+            ExtendAccessTokenExpiry::class,
             CheckPasswordExpiry::class,
             EnsureUserHasPermission::class,
         ]);

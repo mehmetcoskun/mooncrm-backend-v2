@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Middleware\ExtendAccessTokenExpiry;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
@@ -126,8 +127,8 @@ class TwoFactorAuthController extends Controller
 
         if (strlen($request->code) === 10) {
             if ($user->validateRecoveryCode($request->code)) {
-                $token = $user->createToken('crm-login', ['*'], now()->addHours(24))->plainTextToken;
-                
+                $token = $user->createToken('crm-login', ['*'], now()->addDays(ExtendAccessTokenExpiry::TOKEN_LIFETIME_DAYS))->plainTextToken;
+
                 return response()->json([
                     'message' => 'Kurtarma kodu ile giriş başarılı!',
                     'token' => $token,
@@ -147,7 +148,7 @@ class TwoFactorAuthController extends Controller
             ], 422);
         }
 
-        $token = $user->createToken('crm-login', ['*'], now()->addHours(24))->plainTextToken;
+        $token = $user->createToken('crm-login', ['*'], now()->addDays(ExtendAccessTokenExpiry::TOKEN_LIFETIME_DAYS))->plainTextToken;
 
         return response()->json([
             'message' => 'İki faktörlü doğrulama başarılı!',

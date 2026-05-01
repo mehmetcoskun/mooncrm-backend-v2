@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Middleware\ExtendAccessTokenExpiry;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -71,7 +72,7 @@ class AuthController extends Controller
         return response()->json([
             'user' => $user->load('organization', 'roles.permissions'),
             'organization_id' => $organization ? $organization->id : null,
-            'token' => $user->createToken('crm-login', ['*'], now()->addHours(24))->plainTextToken,
+            'token' => $user->createToken('crm-login', ['*'], now()->addDays(ExtendAccessTokenExpiry::TOKEN_LIFETIME_DAYS))->plainTextToken,
             'needs_password_change' => $user->needsPasswordChange(),
         ]);
     }
@@ -109,7 +110,7 @@ class AuthController extends Controller
     public function updateProfile(Request $request)
     {
         $user = $request->user();
-        
+
         $data = $request->all();
 
         if (!empty($data['email'])) {
