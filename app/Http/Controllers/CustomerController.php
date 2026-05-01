@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\CustomerLog;
+use App\Models\CustomerNotification;
 use App\Models\Category;
 use App\Models\Hotel;
 use App\Models\Organization;
@@ -297,20 +298,26 @@ class CustomerController extends Controller
                 $newRoomType = isset($lastTravelInfo['room_type']) ? $lastTravelInfo['room_type'] : '';
                 $hasTravelInfo = !empty($customer->travel_info) && isset($lastTravelInfo['arrival_date']) && isset($lastTravelInfo['departure_date']);
 
+                $oldHadSaleData = is_array($oldLastTravelInfo)
+                    && !empty($oldLastTravelInfo['arrival_date'])
+                    && !empty($oldLastTravelInfo['departure_date'])
+                    && !empty($oldLastTravelInfo['room_type']);
+                $becameSaleReady = !$oldHadSaleData && $hasTravelInfo && !empty($newRoomType);
+
                 if ($hasTravelInfo && !empty($newRoomType)) {
-                    if ($statusChanged) {
+                    if ($statusChanged || $becameSaleReady) {
                         $this->sendConfirmationEmail($customer);
                         $this->sendSalesNotification($customer);
                     }
 
-                    if (($statusChanged || $hotelChanged)
+                    if (($statusChanged || $hotelChanged || $becameSaleReady)
                         && !$lastTravelInfo['is_custom_hotel']
                         && isset($lastTravelInfo['hotel_id']) && !empty($lastTravelInfo['hotel_id'])) {
                         $this->sendHotelMessage($customer, 8);
                         $this->sendHotelEmail($customer, 8);
                     }
 
-                    if (($statusChanged || $transferChanged)
+                    if (($statusChanged || $transferChanged || $becameSaleReady)
                         && isset($lastTravelInfo['transfer_id']) && !empty($lastTravelInfo['transfer_id'])) {
                         $this->sendTransferMessage($customer, 8);
                     }
@@ -828,55 +835,105 @@ class CustomerController extends Controller
         return $customer;
     }
 
-    private function sendCustomerMessages($customer, $category = null, $tag = null)
+    private function recordNotification($customer, $type, $variant, $status, $data = [], $context = [])
     {
+        return CustomerNotification::create(array_merge([
+            'customer_id' => $customer->id,
+            'organization_id' => $customer->organization_id,
+            'type' => $type,
+            'variant' => $variant,
+            'status' => $status,
+            'triggered_by' => $context['triggered_by'] ?? 'auto',
+            'triggered_by_user_id' => $context['user_id'] ?? null,
+        ], $data));
+    }
+
+    private function isNotificationAlreadySent($customer, $type, $variant = null)
+    {
+        $query = CustomerNotification::where('customer_id', $customer->id)
+            ->where('type', $type)
+            ->where('status', 'success');
+        if ($variant !== null) {
+            $query->where('variant', $variant);
+        }
+        return $query->exists();
+    }
+
+    private function sendCustomerMessages($customer, $category = null, $tag = null, $context = [])
+    {
+        $isManual = ($context['triggered_by'] ?? 'auto') === 'manual';
+
+        if (!$isManual && $this->isNotificationAlreadySent($customer, 'customer_message')) {
+            $this->recordNotification($customer, 'customer_message', null, 'skipped', ['skip_reason' => 'Daha önce başarıyla gönderilmiş'], $context);
+            return;
+        }
+
         if ($tag) {
-            $this->sendTagMessage($customer, $tag);
+            $this->sendTagMessage($customer, $tag, $context);
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->welcome_message_settings)) {
+            $this->recordNotification($customer, 'customer_message', null, 'skipped', ['skip_reason' => 'welcome_message_settings ayarı tanımlı değil'], $context);
             return;
         }
 
         $messageSettings = $settings->welcome_message_settings;
         $channel = $category ? $category->channel : null;
 
-        if ($channel) {
-            switch ($channel) {
-                case 'whatsapp':
-                    if (!empty($messageSettings['whatsapp']) && $messageSettings['whatsapp']['status']) {
-                        $this->sendWhatsappMessage($customer, $messageSettings['whatsapp']);
-                    }
-                    break;
-                case 'sms':
-                    if (!empty($messageSettings['sms']) && $messageSettings['sms']['status']) {
-                        $this->sendSmsMessage($customer, $messageSettings['sms']);
-                    }
-                    break;
-                case 'email':
-                    if (!empty($messageSettings['email']) && $messageSettings['email']['status']) {
-                        $this->sendEmailMessage($customer, $messageSettings['email']);
-                    }
-                    break;
-                case 'phone':
-                    if (!empty($messageSettings['phone']) && $messageSettings['phone']['status']) {
-                        $this->sendPhoneCall($customer, $category);
-                    }
-                    break;
-            }
+        if (!$channel) {
+            $this->recordNotification($customer, 'customer_message', null, 'skipped', ['skip_reason' => 'Kategoride kanal (channel) tanımlı değil'], $context);
+            return;
+        }
+
+        switch ($channel) {
+            case 'whatsapp':
+                if (!empty($messageSettings['whatsapp']) && $messageSettings['whatsapp']['status']) {
+                    $this->sendWhatsappMessage($customer, $messageSettings['whatsapp'], $context);
+                } else {
+                    $this->recordNotification($customer, 'customer_message', 'whatsapp', 'skipped', ['skip_reason' => 'WhatsApp karşılama mesajı kapalı veya tanımlı değil'], $context);
+                }
+                break;
+            case 'sms':
+                if (!empty($messageSettings['sms']) && $messageSettings['sms']['status']) {
+                    $this->sendSmsMessage($customer, $messageSettings['sms'], $context);
+                } else {
+                    $this->recordNotification($customer, 'customer_message', 'sms', 'skipped', ['skip_reason' => 'SMS karşılama mesajı kapalı veya tanımlı değil'], $context);
+                }
+                break;
+            case 'email':
+                if (!empty($messageSettings['email']) && $messageSettings['email']['status']) {
+                    $this->sendEmailMessage($customer, $messageSettings['email'], $context);
+                } else {
+                    $this->recordNotification($customer, 'customer_message', 'email', 'skipped', ['skip_reason' => 'E-posta karşılama mesajı kapalı veya tanımlı değil'], $context);
+                }
+                break;
+            case 'phone':
+                if (!empty($messageSettings['phone']) && $messageSettings['phone']['status']) {
+                    $this->sendPhoneCall($customer, $category, $context);
+                } else {
+                    $this->recordNotification($customer, 'customer_message', 'phone', 'skipped', ['skip_reason' => 'Telefon araması kapalı veya tanımlı değil'], $context);
+                }
+                break;
+            default:
+                $this->recordNotification($customer, 'customer_message', $channel, 'skipped', ['skip_reason' => 'Bilinmeyen kanal (channel)'], $context);
         }
     }
 
-    private function sendTagMessage($customer, $tag)
+    private function sendTagMessage($customer, $tag, $context = [])
     {
+        $type = 'customer_message';
+        $variant = 'whatsapp_tag';
+
         if (empty($tag->welcome_message)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Etikette karşılama mesajı tanımlı değil'], $context);
             return;
         }
 
         $user = $customer->user;
         if (!$user) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Müşteriye atanmış kullanıcı (danışman) yok'], $context);
             return;
         }
 
@@ -891,6 +948,7 @@ class CustomerController extends Controller
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->whatsapp_settings) || empty($settings->whatsapp_settings['api_url'])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'WhatsApp ayarlarında api_url tanımlı değil'], $context);
             return;
         }
 
@@ -899,6 +957,7 @@ class CustomerController extends Controller
             ->first();
 
         if (!$userSession) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Kullanıcının WhatsApp oturumu bulunamadı'], $context);
             return;
         }
 
@@ -907,32 +966,54 @@ class CustomerController extends Controller
             $phoneNumber = $phoneUtil->parse($customer->phone);
             $formattedPhone = $phoneUtil->format($phoneNumber, PhoneNumberFormat::E164);
             $formattedPhone = substr($formattedPhone, 1) . '@c.us';
-
-            Http::withHeaders([
-                'X-Api-Key' => $settings->whatsapp_settings['api_key']
-            ])->post($settings->whatsapp_settings['api_url'] . '/sendText', [
-                'chatId' => $formattedPhone,
-                'text' => $message,
-                'session' => $userSession->title
-            ]);
         } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, $variant, 'failed', ['error' => 'Telefon numarası işlenemedi: ' . $e->getMessage()], $context);
+            return;
+        }
+
+        $request = ['chatId' => $formattedPhone, 'text' => $message, 'session' => $userSession->title];
+
+        try {
+            $response = Http::withHeaders([
+                'X-Api-Key' => $settings->whatsapp_settings['api_key']
+            ])->post($settings->whatsapp_settings['api_url'] . '/sendText', $request);
+
+            $this->recordNotification($customer, $type, $variant, $response->successful() ? 'success' : 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'response_status' => $response->status(),
+                'response_body' => $response->body(),
+            ], $context);
+        } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, $variant, 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'error' => $e->getMessage(),
+            ], $context);
         }
     }
 
-    private function sendWhatsappMessage($customer, $whatsappSettings)
+    private function sendWhatsappMessage($customer, $whatsappSettings, $context = [])
     {
+        $type = 'customer_message';
+        $variant = 'whatsapp';
+        $isManual = ($context['triggered_by'] ?? 'auto') === 'manual';
+
         $currentTime = Carbon::now()->format('H:i:s');
-        if ($currentTime < $whatsappSettings['start_time'] || $currentTime > $whatsappSettings['end_time']) {
+        if (!$isManual && ($currentTime < $whatsappSettings['start_time'] || $currentTime > $whatsappSettings['end_time'])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'WhatsApp gönderim saat aralığı dışında'], $context);
             return;
         }
 
         $user = $customer->user;
         if (!$user) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Müşteriye atanmış kullanıcı (danışman) yok'], $context);
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->whatsapp_settings) || empty($settings->whatsapp_settings['api_url'])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'WhatsApp ayarlarında api_url tanımlı değil'], $context);
             return;
         }
 
@@ -941,6 +1022,7 @@ class CustomerController extends Controller
             ->first();
 
         if (!$userSession) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Kullanıcının WhatsApp oturumu bulunamadı'], $context);
             return;
         }
 
@@ -948,6 +1030,7 @@ class CustomerController extends Controller
         $message = $this->getMessageByLanguage($whatsappSettings['messages'], $customerLanguage);
 
         if (!$message) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Bu dil için WhatsApp mesaj şablonu yok: ' . ($customerLanguage ?? 'tanımsız')], $context);
             return;
         }
 
@@ -965,60 +1048,90 @@ class CustomerController extends Controller
             $phoneNumber = $phoneUtil->parse($customer->phone);
             $formattedPhone = $phoneUtil->format($phoneNumber, PhoneNumberFormat::E164);
             $formattedPhone = substr($formattedPhone, 1) . '@c.us';
-
-            $apiUrl = $settings->whatsapp_settings['api_url'];
-
-            if (!empty($whatsappSettings['file']) && !empty($whatsappSettings['file']['content'])) {
-                $endpoint = $whatsappSettings['file']['type'] === 'image' ? '/sendImage' : '/sendFile';
-
-                Http::withHeaders([
-                    'X-Api-Key' => $settings->whatsapp_settings['api_key']
-                ])->post($apiUrl . $endpoint, [
-                    'chatId' => $formattedPhone,
-                    'file' => [
-                        'mimetype' => $whatsappSettings['file']['type'] === 'image' ? 'image/jpeg' : 'application/pdf',
-                        'filename' => $whatsappSettings['file']['type'] === 'image' ? 'welcome.jpg' : 'welcome.pdf',
-                        'data' => $whatsappSettings['file']['content']
-                    ],
-                    'caption' => $message,
-                    'session' => $userSession->title
-                ]);
-            } else {
-                Http::withHeaders([
-                    'X-Api-Key' => $settings->whatsapp_settings['api_key']
-                ])->post($apiUrl . '/sendText', [
-                    'chatId' => $formattedPhone,
-                    'text' => $message,
-                    'session' => $userSession->title
-                ]);
-            }
         } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, $variant, 'failed', ['error' => 'Telefon numarası işlenemedi: ' . $e->getMessage()], $context);
+            return;
+        }
+
+        $apiUrl = $settings->whatsapp_settings['api_url'];
+
+        if (!empty($whatsappSettings['file']) && !empty($whatsappSettings['file']['content'])) {
+            $endpoint = $whatsappSettings['file']['type'] === 'image' ? '/sendImage' : '/sendFile';
+            $request = [
+                'chatId' => $formattedPhone,
+                'file' => [
+                    'mimetype' => $whatsappSettings['file']['type'] === 'image' ? 'image/jpeg' : 'application/pdf',
+                    'filename' => $whatsappSettings['file']['type'] === 'image' ? 'welcome.jpg' : 'welcome.pdf',
+                    'data' => '<binary omitted>'
+                ],
+                'caption' => $message,
+                'session' => $userSession->title
+            ];
+            $sendUrl = $apiUrl . $endpoint;
+            $sendBody = $request;
+            $sendBody['file']['data'] = $whatsappSettings['file']['content'];
+        } else {
+            $request = [
+                'chatId' => $formattedPhone,
+                'text' => $message,
+                'session' => $userSession->title
+            ];
+            $sendUrl = $apiUrl . '/sendText';
+            $sendBody = $request;
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'X-Api-Key' => $settings->whatsapp_settings['api_key']
+            ])->post($sendUrl, $sendBody);
+
+            $this->recordNotification($customer, $type, $variant, $response->successful() ? 'success' : 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'response_status' => $response->status(),
+                'response_body' => $response->body(),
+            ], $context);
+        } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, $variant, 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'error' => $e->getMessage(),
+            ], $context);
         }
     }
 
-    private function sendSmsMessage($customer, $smsSettings)
+    private function sendSmsMessage($customer, $smsSettings, $context = [])
     {
+        $type = 'customer_message';
+        $variant = 'sms';
+        $isManual = ($context['triggered_by'] ?? 'auto') === 'manual';
+
         $currentTime = Carbon::now()->format('H:i:s');
-        if ($currentTime < $smsSettings['start_time'] || $currentTime > $smsSettings['end_time']) {
+        if (!$isManual && ($currentTime < $smsSettings['start_time'] || $currentTime > $smsSettings['end_time'])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'SMS gönderim saat aralığı dışında'], $context);
             return;
         }
 
         $user = $customer->user;
         if (!$user) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Müşteriye atanmış kullanıcı (danışman) yok'], $context);
             return;
         }
 
         if (empty($customer->phone)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Müşteride telefon numarası yok'], $context);
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->sms_settings)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'SMS ayarları (sms_settings) tanımlı değil'], $context);
             return;
         }
 
         $twilioSettings = $settings->sms_settings;
         if (empty($twilioSettings['account_sid']) || empty($twilioSettings['auth_token']) || empty($twilioSettings['phone_number'])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Twilio bilgileri (account_sid / auth_token / phone_number) eksik'], $context);
             return;
         }
 
@@ -1026,6 +1139,7 @@ class CustomerController extends Controller
         $message = $this->getMessageByLanguage($smsSettings['messages'], $customerLanguage);
 
         if (!$message) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Bu dil için SMS şablonu yok: ' . ($customerLanguage ?? 'tanımsız')], $context);
             return;
         }
 
@@ -1038,38 +1152,59 @@ class CustomerController extends Controller
             $message
         );
 
+        $request = ['to' => $customer->phone, 'from' => $twilioSettings['phone_number'], 'body' => $message];
+
         try {
             $client = new Client($twilioSettings['account_sid'], $twilioSettings['auth_token']);
 
-            $client->messages->create(
+            $sms = $client->messages->create(
                 $customer->phone,
                 [
                     'from' => $twilioSettings['phone_number'],
                     'body' => $message
                 ]
             );
+
+            $this->recordNotification($customer, $type, $variant, 'success', [
+                'channel' => 'sms',
+                'request' => $request,
+                'response_body' => json_encode(['sid' => $sms->sid, 'status' => $sms->status ?? null]),
+            ], $context);
         } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, $variant, 'failed', [
+                'channel' => 'sms',
+                'request' => $request,
+                'error' => $e->getMessage(),
+            ], $context);
         }
     }
 
-    private function sendEmailMessage($customer, $emailSettings)
+    private function sendEmailMessage($customer, $emailSettings, $context = [])
     {
+        $type = 'customer_message';
+        $variant = 'email';
+        $isManual = ($context['triggered_by'] ?? 'auto') === 'manual';
+
         $currentTime = Carbon::now()->format('H:i:s');
-        if ($currentTime < $emailSettings['start_time'] || $currentTime > $emailSettings['end_time']) {
+        if (!$isManual && ($currentTime < $emailSettings['start_time'] || $currentTime > $emailSettings['end_time'])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'E-posta gönderim saat aralığı dışında'], $context);
             return;
         }
 
         if (empty($customer->email)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Müşteride e-posta adresi yok'], $context);
             return;
         }
 
         $user = $customer->user;
         if (!$user) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Müşteriye atanmış kullanıcı (danışman) yok'], $context);
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->mail_settings)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'E-posta (mail_settings) ayarları tanımlı değil'], $context);
             return;
         }
 
@@ -1077,6 +1212,7 @@ class CustomerController extends Controller
         $messageTemplate = $this->getMessageByLanguage($emailSettings['messages'], $customerLanguage);
 
         if (!$messageTemplate) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Bu dil için e-posta şablonu yok: ' . ($customerLanguage ?? 'tanımsız')], $context);
             return;
         }
 
@@ -1090,6 +1226,12 @@ class CustomerController extends Controller
         );
 
         $smtpSettings = $settings->mail_settings;
+        $organization = $customer->organization;
+        $request = [
+            'to' => $customer->email,
+            'from' => $smtpSettings['smtp_username'],
+            'subject' => 'Welcome to ' . $organization->name,
+        ];
 
         $transport = new EsmtpTransport($smtpSettings['smtp_host'], $smtpSettings['smtp_port']);
         $transport->setUsername($smtpSettings['smtp_username']);
@@ -1098,12 +1240,15 @@ class CustomerController extends Controller
         try {
             $transport->start();
         } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, $variant, 'failed', [
+                'channel' => 'email',
+                'request' => $request,
+                'error' => 'SMTP bağlantısı başlatılamadı: ' . $e->getMessage(),
+            ], $context);
             return;
         }
 
         $mailer = new Mailer($transport);
-
-        $organization = $customer->organization;
 
         $email = (new Email())
             ->from(new Address($smtpSettings['smtp_username'], $smtpSettings['smtp_from_name']))
@@ -1113,22 +1258,37 @@ class CustomerController extends Controller
 
         try {
             $mailer->send($email);
+            $this->recordNotification($customer, $type, $variant, 'success', [
+                'channel' => 'email',
+                'request' => $request,
+            ], $context);
         } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, $variant, 'failed', [
+                'channel' => 'email',
+                'request' => $request,
+                'error' => $e->getMessage(),
+            ], $context);
         }
     }
 
-    private function sendPhoneCall($customer, $category)
+    private function sendPhoneCall($customer, $category, $context = [])
     {
+        $type = 'customer_message';
+        $variant = 'phone';
+
         if (empty($customer->phone)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Müşteride telefon numarası yok'], $context);
             return;
         }
 
         if (!$category || empty($category->vapi_assistant_id) || empty($category->vapi_phone_number_id)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Kategoride VAPI yapılandırması eksik (vapi_assistant_id / vapi_phone_number_id)'], $context);
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->vapi_settings) || empty($settings->vapi_settings['api_key'])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'VAPI ayarlarında api_key tanımlı değil'], $context);
             return;
         }
 
@@ -1137,42 +1297,68 @@ class CustomerController extends Controller
             $phoneNumber = $phoneUtil->parse($customer->phone);
 
             if (!$phoneUtil->isValidNumber($phoneNumber)) {
+                $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Geçersiz telefon numarası'], $context);
                 return;
             }
 
             $formattedPhone = $phoneUtil->format($phoneNumber, PhoneNumberFormat::E164);
+        } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, $variant, 'failed', ['error' => 'Telefon numarası işlenemedi: ' . $e->getMessage()], $context);
+            return;
+        }
 
-            $apiKey = $settings->vapi_settings['api_key'];
+        $apiKey = $settings->vapi_settings['api_key'];
+        $request = [
+            'assistantId' => $category->vapi_assistant_id,
+            'phoneNumberId' => $category->vapi_phone_number_id,
+            'customer' => ['number' => $formattedPhone],
+            'assistantOverrides' => ['variableValues' => ['id' => (string) $customer->id]],
+        ];
 
+        try {
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $apiKey,
                 'Content-Type' => 'application/json',
-            ])->post(env('VAPI_API_URL') . '/call', [
-                'assistantId' => $category->vapi_assistant_id,
-                'phoneNumberId' => $category->vapi_phone_number_id,
-                'customer' => [
-                    'number' => $formattedPhone
-                ],
-                'assistantOverrides' => [
-                    'variableValues' => [
-                        'id' => (string) $customer->id
-                    ]
-                ]
-            ]);
+            ])->post(env('VAPI_API_URL') . '/call', $request);
 
+            $this->recordNotification($customer, $type, $variant, $response->successful() ? 'success' : 'failed', [
+                'channel' => 'phone',
+                'request' => $request,
+                'response_status' => $response->status(),
+                'response_body' => $response->body(),
+            ], $context);
         } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, $variant, 'failed', [
+                'channel' => 'phone',
+                'request' => $request,
+                'error' => $e->getMessage(),
+            ], $context);
         }
     }
 
-    private function sendUserNotification($customer)
+    private function sendUserNotification($customer, $context = [])
     {
+        $type = 'user_notification';
+        $isManual = ($context['triggered_by'] ?? 'auto') === 'manual';
+
+        if (!$isManual && $this->isNotificationAlreadySent($customer, $type)) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Daha önce başarıyla gönderilmiş'], $context);
+            return;
+        }
+
         $user = $customer->user;
-        if (!$user || !$user->whatsapp_session_id) {
+        if (!$user) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Müşteriye atanmış kullanıcı (danışman) yok'], $context);
+            return;
+        }
+        if (!$user->whatsapp_session_id) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Kullanıcının WhatsApp oturumu (whatsapp_session_id) atanmamış'], $context);
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->whatsapp_settings) || empty($settings->whatsapp_settings['api_url'])) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'WhatsApp ayarlarında api_url tanımlı değil'], $context);
             return;
         }
 
@@ -1181,20 +1367,27 @@ class CustomerController extends Controller
             ->first();
 
         if (!$adminSession || !$adminSession->phone) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Admin WhatsApp oturumu bulunamadı veya telefonu yok'], $context);
             return;
         }
 
         $userSession = WhatsappSession::where('id', $user->whatsapp_session_id)->first();
         if (!$userSession || !$userSession->phone) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Kullanıcının WhatsApp oturumu bulunamadı veya telefonu yok'], $context);
             return;
         }
 
         $notificationSettings = $settings->user_notification_settings ?? [];
         if (empty($notificationSettings['status']) || !$notificationSettings['status']) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Danışman bildirimi (user_notification_settings.status) kapalı'], $context);
             return;
         }
 
-        $messageTemplate = $notificationSettings['message_template'];
+        $messageTemplate = $notificationSettings['message_template'] ?? null;
+        if (empty($messageTemplate)) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Mesaj şablonu (message_template) boş'], $context);
+            return;
+        }
 
         $categoryName = $customer->category ? $customer->category->title : '-';
         $dateTime = Carbon::parse($customer->created_at)->format('d.m.Y H:i');
@@ -1206,22 +1399,45 @@ class CustomerController extends Controller
             $messageTemplate
         );
 
+        $request = [
+            'chatId' => $userSession->phone . '@c.us',
+            'text' => $message,
+            'session' => $adminSession->title
+        ];
+
         try {
-            Http::withHeaders([
+            $response = Http::withHeaders([
                 'X-Api-Key' => $settings->whatsapp_settings['api_key']
-            ])->post($settings->whatsapp_settings['api_url'] . '/sendText', [
-                'chatId' => $userSession->phone . '@c.us',
-                'text' => $message,
-                'session' => $adminSession->title
-            ]);
+            ])->post($settings->whatsapp_settings['api_url'] . '/sendText', $request);
+
+            $this->recordNotification($customer, $type, null, $response->successful() ? 'success' : 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'response_status' => $response->status(),
+                'response_body' => $response->body(),
+            ], $context);
         } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, null, 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'error' => $e->getMessage(),
+            ], $context);
         }
     }
 
-    private function sendGroupNotification($customer)
+    private function sendGroupNotification($customer, $context = [])
     {
+        $type = 'group_notification';
+        $isManual = ($context['triggered_by'] ?? 'auto') === 'manual';
+
+        if (!$isManual && $this->isNotificationAlreadySent($customer, $type)) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Daha önce başarıyla gönderilmiş'], $context);
+            return;
+        }
+
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->whatsapp_settings) || empty($settings->whatsapp_settings['api_url'])) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'WhatsApp ayarlarında api_url tanımlı değil'], $context);
             return;
         }
 
@@ -1230,19 +1446,26 @@ class CustomerController extends Controller
             ->first();
 
         if (!$adminSession || !$adminSession->phone) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Admin WhatsApp oturumu bulunamadı veya telefonu yok'], $context);
             return;
         }
 
         $notificationSettings = $settings->group_notification_settings ?? [];
         if (empty($notificationSettings['status']) || !$notificationSettings['status']) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Grup bildirimi (group_notification_settings.status) kapalı'], $context);
             return;
         }
 
         if (empty($notificationSettings['chat_id'])) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Grup bildirimi için chat_id boş'], $context);
             return;
         }
 
-        $messageTemplate = $notificationSettings['message_template'];
+        $messageTemplate = $notificationSettings['message_template'] ?? null;
+        if (empty($messageTemplate)) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Mesaj şablonu (message_template) boş'], $context);
+            return;
+        }
 
         $categoryName = $customer->category ? $customer->category->title : '-';
         $dateTime = Carbon::parse($customer->created_at)->format('d.m.Y H:i');
@@ -1255,15 +1478,29 @@ class CustomerController extends Controller
             $messageTemplate
         );
 
+        $request = [
+            'chatId' => $notificationSettings['chat_id'],
+            'text' => $message,
+            'session' => $adminSession->title
+        ];
+
         try {
-            Http::withHeaders([
+            $response = Http::withHeaders([
                 'X-Api-Key' => $settings->whatsapp_settings['api_key']
-            ])->post($settings->whatsapp_settings['api_url'] . '/sendText', [
-                'chatId' => $notificationSettings['chat_id'],
-                'text' => $message,
-                'session' => $adminSession->title
-            ]);
+            ])->post($settings->whatsapp_settings['api_url'] . '/sendText', $request);
+
+            $this->recordNotification($customer, $type, null, $response->successful() ? 'success' : 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'response_status' => $response->status(),
+                'response_body' => $response->body(),
+            ], $context);
         } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, null, 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'error' => $e->getMessage(),
+            ], $context);
         }
     }
 
@@ -1292,14 +1529,28 @@ class CustomerController extends Controller
         return $message ? $message['message'] : (collect($messages)->firstWhere('is_default', true)['message'] ?? null);
     }
 
-    private function sendConfirmationEmail(Customer $customer)
+    private function sendConfirmationEmail(Customer $customer, $context = [])
     {
-        if (empty($customer->email) || empty($customer->travel_info) || !is_array($customer->travel_info)) {
+        $type = 'confirmation_email';
+        $isManual = ($context['triggered_by'] ?? 'auto') === 'manual';
+
+        if (!$isManual && $this->isNotificationAlreadySent($customer, $type)) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Daha önce başarıyla gönderilmiş'], $context);
+            return;
+        }
+
+        if (empty($customer->email)) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Müşteride e-posta adresi yok'], $context);
+            return;
+        }
+        if (empty($customer->travel_info) || !is_array($customer->travel_info)) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'travel_info boş veya geçersiz'], $context);
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->mail_settings) || empty($settings->sales_mail_settings)) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'mail_settings veya sales_mail_settings tanımlı değil'], $context);
             return;
         }
 
@@ -1307,20 +1558,9 @@ class CustomerController extends Controller
         $salesMailSettings = $settings->sales_mail_settings;
 
         if (empty($salesMailSettings['status']) || !$salesMailSettings['status'] || empty($salesMailSettings['message_template'])) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'sales_mail_settings kapalı veya şablon boş'], $context);
             return;
         }
-
-        $transport = new EsmtpTransport($smtpSettings['smtp_host'], $smtpSettings['smtp_port']);
-        $transport->setUsername($smtpSettings['smtp_username']);
-        $transport->setPassword($smtpSettings['smtp_password']);
-
-        try {
-            $transport->start();
-        } catch (\Exception $e) {
-            return;
-        }
-
-        $mailer = new Mailer($transport);
 
         $travelInfo = $customer->travel_info[count($customer->travel_info) - 1] ?? null;
         $organization = $customer->organization;
@@ -1359,6 +1599,29 @@ class CustomerController extends Controller
             $salesMailSettings['message_template']
         );
 
+        $request = [
+            'to' => $customer->email,
+            'from' => $smtpSettings['smtp_username'],
+            'subject' => $salesMailSettings['subject'] ?? 'Appointment and Accommodation Confirmation',
+        ];
+
+        $transport = new EsmtpTransport($smtpSettings['smtp_host'], $smtpSettings['smtp_port']);
+        $transport->setUsername($smtpSettings['smtp_username']);
+        $transport->setPassword($smtpSettings['smtp_password']);
+
+        try {
+            $transport->start();
+        } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, null, 'failed', [
+                'channel' => 'email',
+                'request' => $request,
+                'error' => 'SMTP bağlantısı başlatılamadı: ' . $e->getMessage(),
+            ], $context);
+            return;
+        }
+
+        $mailer = new Mailer($transport);
+
         $email = (new Email())
             ->from(new Address($smtpSettings['smtp_username'], $smtpSettings['smtp_from_name']))
             ->to(new Address($customer->email, $customer->name))
@@ -1367,26 +1630,47 @@ class CustomerController extends Controller
 
         try {
             $mailer->send($email);
+            $this->recordNotification($customer, $type, null, 'success', [
+                'channel' => 'email',
+                'request' => $request,
+            ], $context);
         } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, null, 'failed', [
+                'channel' => 'email',
+                'request' => $request,
+                'error' => $e->getMessage(),
+            ], $context);
         }
     }
 
-    private function sendHotelMessage(Customer $customer, $statusId)
+    private function sendHotelMessage(Customer $customer, $statusId, $context = [])
     {
+        $type = 'hotel_message';
+        $variant = $statusId == 8 ? 'reservation' : 'cancel';
+        $isManual = ($context['triggered_by'] ?? 'auto') === 'manual';
+
+        if (!$isManual && $this->isNotificationAlreadySent($customer, $type, $variant)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Daha önce başarıyla gönderilmiş'], $context);
+            return;
+        }
+
         $lastTravelInfo = $customer->travel_info && is_array($customer->travel_info) && count($customer->travel_info) > 0 ?
             $customer->travel_info[count($customer->travel_info) - 1] : null;
 
-        if (!$lastTravelInfo || $lastTravelInfo['is_custom_hotel'] || !isset($lastTravelInfo['hotel_id']) || empty($lastTravelInfo['hotel_id'])) {
+        if (!$lastTravelInfo || !empty($lastTravelInfo['is_custom_hotel']) || !isset($lastTravelInfo['hotel_id']) || empty($lastTravelInfo['hotel_id'])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'travel_info içinde hotel_id yok veya is_custom_hotel işaretli'], $context);
             return;
         }
 
         $hotel = Hotel::find($lastTravelInfo['hotel_id']);
         if (!$hotel || empty($hotel->chat_id) || empty($hotel->message_templates)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Otelde chat_id veya message_templates tanımlı değil'], $context);
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->whatsapp_settings) || empty($settings->whatsapp_settings['api_url'])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'WhatsApp ayarlarında api_url tanımlı değil'], $context);
             return;
         }
 
@@ -1395,6 +1679,7 @@ class CustomerController extends Controller
             ->first();
 
         if (!$adminSession) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Admin WhatsApp oturumu bulunamadı'], $context);
             return;
         }
 
@@ -1402,17 +1687,15 @@ class CustomerController extends Controller
         $templateKey = $statusId == 8 ? 'sale' : 'cancel';
 
         if (empty($messageTemplates[$templateKey])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Otel için "' . $templateKey . '" şablonu tanımlı değil'], $context);
             return;
         }
 
         $messageTemplate = $messageTemplates[$templateKey];
 
-        $travelInfoLast = $customer->travel_info && is_array($customer->travel_info) && count($customer->travel_info) > 0 ?
-            $customer->travel_info[count($customer->travel_info) - 1] : null;
-
-        $checkIn = $travelInfoLast ? $travelInfoLast['arrival_date'] ?? '' : '';
-        $checkOut = $travelInfoLast ? $travelInfoLast['departure_date'] ?? '' : '';
-        $roomType = $travelInfoLast ? $travelInfoLast['room_type'] ?? '' : '';
+        $checkIn = $lastTravelInfo['arrival_date'] ?? '';
+        $checkOut = $lastTravelInfo['departure_date'] ?? '';
+        $roomType = $lastTravelInfo['room_type'] ?? '';
 
         if ($checkIn) {
             $checkIn = Carbon::parse($checkIn)->format('d.m.Y');
@@ -1430,34 +1713,60 @@ class CustomerController extends Controller
 
         $message = str_replace(array_keys($replacements), array_values($replacements), $messageTemplate);
 
+        $request = [
+            'chatId' => $hotel->chat_id,
+            'text' => $message,
+            'session' => $adminSession->title
+        ];
+
         try {
-            Http::withHeaders([
+            $response = Http::withHeaders([
                 'X-Api-Key' => $settings->whatsapp_settings['api_key']
-            ])->post($settings->whatsapp_settings['api_url'] . '/sendText', [
-                'chatId' => $hotel->chat_id,
-                'text' => $message,
-                'session' => $adminSession->title
-            ]);
+            ])->post($settings->whatsapp_settings['api_url'] . '/sendText', $request);
+
+            $this->recordNotification($customer, $type, $variant, $response->successful() ? 'success' : 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'response_status' => $response->status(),
+                'response_body' => $response->body(),
+            ], $context);
         } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, $variant, 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'error' => $e->getMessage(),
+            ], $context);
         }
     }
 
-    private function sendHotelEmail(Customer $customer, $statusId)
+    private function sendHotelEmail(Customer $customer, $statusId, $context = [])
     {
+        $type = 'hotel_email';
+        $variant = $statusId == 8 ? 'reservation' : 'cancel';
+        $isManual = ($context['triggered_by'] ?? 'auto') === 'manual';
+
+        if (!$isManual && $this->isNotificationAlreadySent($customer, $type, $variant)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Daha önce başarıyla gönderilmiş'], $context);
+            return;
+        }
+
         $lastTravelInfo = $customer->travel_info && is_array($customer->travel_info) && count($customer->travel_info) > 0 ?
             $customer->travel_info[count($customer->travel_info) - 1] : null;
 
-        if (!$lastTravelInfo || $lastTravelInfo['is_custom_hotel'] || !isset($lastTravelInfo['hotel_id']) || empty($lastTravelInfo['hotel_id'])) {
+        if (!$lastTravelInfo || !empty($lastTravelInfo['is_custom_hotel']) || !isset($lastTravelInfo['hotel_id']) || empty($lastTravelInfo['hotel_id'])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'travel_info içinde hotel_id yok veya is_custom_hotel işaretli'], $context);
             return;
         }
 
         $hotel = Hotel::find($lastTravelInfo['hotel_id']);
         if (!$hotel || empty($hotel->email) || empty($hotel->message_templates)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Otelde e-posta veya message_templates tanımlı değil'], $context);
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->mail_settings)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'E-posta (mail_settings) ayarları tanımlı değil'], $context);
             return;
         }
 
@@ -1465,31 +1774,15 @@ class CustomerController extends Controller
         $templateKey = $statusId == 8 ? 'sale' : 'cancel';
 
         if (empty($messageTemplates[$templateKey])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Otel için "' . $templateKey . '" e-posta şablonu tanımlı değil'], $context);
             return;
         }
 
         $messageTemplate = $messageTemplates[$templateKey];
 
-        $smtpSettings = $settings->mail_settings;
-
-        $transport = new EsmtpTransport($smtpSettings['smtp_host'], $smtpSettings['smtp_port']);
-        $transport->setUsername($smtpSettings['smtp_username']);
-        $transport->setPassword($smtpSettings['smtp_password']);
-
-        try {
-            $transport->start();
-        } catch (\Exception $e) {
-            return;
-        }
-
-        $mailer = new Mailer($transport);
-
-        $travelInfoLast = $customer->travel_info && is_array($customer->travel_info) && count($customer->travel_info) > 0 ?
-            $customer->travel_info[count($customer->travel_info) - 1] : null;
-
-        $checkIn = $travelInfoLast ? $travelInfoLast['arrival_date'] ?? '' : '';
-        $checkOut = $travelInfoLast ? $travelInfoLast['departure_date'] ?? '' : '';
-        $roomType = $travelInfoLast ? $travelInfoLast['room_type'] ?? '' : '';
+        $checkIn = $lastTravelInfo['arrival_date'] ?? '';
+        $checkOut = $lastTravelInfo['departure_date'] ?? '';
+        $roomType = $lastTravelInfo['room_type'] ?? '';
 
         if ($checkIn) {
             $checkIn = Carbon::parse($checkIn)->format('d.m.Y');
@@ -1506,8 +1799,31 @@ class CustomerController extends Controller
         ];
 
         $emailContent = str_replace(array_keys($replacements), array_values($replacements), $messageTemplate);
-
         $subject = $statusId == 8 ? 'Yeni Rezervasyon Bildirimi' : 'Rezervasyon İptal Bildirimi';
+
+        $smtpSettings = $settings->mail_settings;
+        $request = [
+            'to' => $hotel->email,
+            'from' => $smtpSettings['smtp_username'],
+            'subject' => $subject,
+        ];
+
+        $transport = new EsmtpTransport($smtpSettings['smtp_host'], $smtpSettings['smtp_port']);
+        $transport->setUsername($smtpSettings['smtp_username']);
+        $transport->setPassword($smtpSettings['smtp_password']);
+
+        try {
+            $transport->start();
+        } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, $variant, 'failed', [
+                'channel' => 'email',
+                'request' => $request,
+                'error' => 'SMTP bağlantısı başlatılamadı: ' . $e->getMessage(),
+            ], $context);
+            return;
+        }
+
+        $mailer = new Mailer($transport);
 
         $email = (new Email())
             ->from(new Address($smtpSettings['smtp_username'], $smtpSettings['smtp_from_name']))
@@ -1517,23 +1833,47 @@ class CustomerController extends Controller
 
         try {
             $mailer->send($email);
+            $this->recordNotification($customer, $type, $variant, 'success', [
+                'channel' => 'email',
+                'request' => $request,
+            ], $context);
         } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, $variant, 'failed', [
+                'channel' => 'email',
+                'request' => $request,
+                'error' => $e->getMessage(),
+            ], $context);
         }
     }
 
-    private function sendSalesNotification(Customer $customer)
+    private function sendSalesNotification(Customer $customer, $context = [])
     {
+        $type = 'sales_notification';
+        $isManual = ($context['triggered_by'] ?? 'auto') === 'manual';
+
+        if (!$isManual && $this->isNotificationAlreadySent($customer, $type)) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Daha önce başarıyla gönderilmiş'], $context);
+            return;
+        }
+
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
-        if (!$settings || empty($settings->sales_notification_settings) || !$settings->sales_notification_settings['status']) {
+        if (!$settings || empty($settings->sales_notification_settings)) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'sales_notification_settings ayarı tanımlı değil'], $context);
+            return;
+        }
+        if (!$settings->sales_notification_settings['status']) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Satış bildirimi (sales_notification_settings.status) kapalı'], $context);
             return;
         }
 
         $notificationSettings = $settings->sales_notification_settings;
         if (empty($notificationSettings['chat_id'])) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Satış bildirimi için chat_id boş'], $context);
             return;
         }
 
         if (empty($settings->whatsapp_settings) || empty($settings->whatsapp_settings['api_url'])) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'WhatsApp ayarlarında api_url tanımlı değil'], $context);
             return;
         }
 
@@ -1542,6 +1882,12 @@ class CustomerController extends Controller
             ->first();
 
         if (!$adminSession) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Admin WhatsApp oturumu bulunamadı'], $context);
+            return;
+        }
+
+        if (empty($notificationSettings['message_template'])) {
+            $this->recordNotification($customer, $type, null, 'skipped', ['skip_reason' => 'Mesaj şablonu (message_template) boş'], $context);
             return;
         }
 
@@ -1565,34 +1911,60 @@ class CustomerController extends Controller
             $notificationSettings['message_template']
         );
 
+        $request = [
+            'chatId' => $notificationSettings['chat_id'],
+            'text' => $message,
+            'session' => $adminSession->title
+        ];
+
         try {
-            Http::withHeaders([
+            $response = Http::withHeaders([
                 'X-Api-Key' => $settings->whatsapp_settings['api_key']
-            ])->post($settings->whatsapp_settings['api_url'] . '/sendText', [
-                'chatId' => $notificationSettings['chat_id'],
-                'text' => $message,
-                'session' => $adminSession->title
-            ]);
+            ])->post($settings->whatsapp_settings['api_url'] . '/sendText', $request);
+
+            $this->recordNotification($customer, $type, null, $response->successful() ? 'success' : 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'response_status' => $response->status(),
+                'response_body' => $response->body(),
+            ], $context);
         } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, null, 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'error' => $e->getMessage(),
+            ], $context);
         }
     }
 
-    private function sendTransferMessage(Customer $customer, $statusId)
+    private function sendTransferMessage(Customer $customer, $statusId, $context = [])
     {
+        $type = 'transfer_message';
+        $variant = $statusId == 8 ? 'reservation' : 'cancel';
+        $isManual = ($context['triggered_by'] ?? 'auto') === 'manual';
+
+        if (!$isManual && $this->isNotificationAlreadySent($customer, $type, $variant)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Daha önce başarıyla gönderilmiş'], $context);
+            return;
+        }
+
         $lastTravelInfo = $customer->travel_info && is_array($customer->travel_info) && count($customer->travel_info) > 0 ?
             $customer->travel_info[count($customer->travel_info) - 1] : null;
 
         if (!$lastTravelInfo || !isset($lastTravelInfo['transfer_id']) || empty($lastTravelInfo['transfer_id'])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'travel_info içinde transfer_id yok'], $context);
             return;
         }
 
         $transfer = Transfer::find($lastTravelInfo['transfer_id']);
         if (!$transfer || empty($transfer->chat_id) || empty($transfer->message_templates)) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Transferde chat_id veya message_templates tanımlı değil'], $context);
             return;
         }
 
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
         if (!$settings || empty($settings->whatsapp_settings) || empty($settings->whatsapp_settings['api_url'])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'WhatsApp ayarlarında api_url tanımlı değil'], $context);
             return;
         }
 
@@ -1601,6 +1973,7 @@ class CustomerController extends Controller
             ->first();
 
         if (!$adminSession) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Admin WhatsApp oturumu bulunamadı'], $context);
             return;
         }
 
@@ -1608,30 +1981,26 @@ class CustomerController extends Controller
         $templateKey = $statusId == 8 ? 'reservation' : 'cancel';
 
         if (empty($messageTemplates[$templateKey])) {
+            $this->recordNotification($customer, $type, $variant, 'skipped', ['skip_reason' => 'Transfer için "' . $templateKey . '" şablonu tanımlı değil'], $context);
             return;
         }
 
         $messageTemplate = $messageTemplates[$templateKey];
 
-        $travelInfoLast = $customer->travel_info && is_array($customer->travel_info) && count($customer->travel_info) > 0 ?
-            $customer->travel_info[count($customer->travel_info) - 1] : null;
-
-        $arrivalDate = $travelInfoLast ? $travelInfoLast['arrival_date'] ?? '' : '';
-        $arrivalTime = $travelInfoLast ? $travelInfoLast['arrival_time'] ?? '' : '';
-        $arrivalFlightCode = $travelInfoLast ? $travelInfoLast['arrival_flight_code'] ?? '' : '';
-        $departureDate = $travelInfoLast ? $travelInfoLast['departure_date'] ?? '' : '';
-        $departureTime = $travelInfoLast ? $travelInfoLast['departure_time'] ?? '' : '';
-        $departureFlightCode = $travelInfoLast ? $travelInfoLast['departure_flight_code'] ?? '' : '';
-        $personCount = $travelInfoLast ? $travelInfoLast['person_count'] ?? '' : '';
+        $arrivalDate = $lastTravelInfo['arrival_date'] ?? '';
+        $arrivalTime = $lastTravelInfo['arrival_time'] ?? '';
+        $arrivalFlightCode = $lastTravelInfo['arrival_flight_code'] ?? '';
+        $departureDate = $lastTravelInfo['departure_date'] ?? '';
+        $departureTime = $lastTravelInfo['departure_time'] ?? '';
+        $departureFlightCode = $lastTravelInfo['departure_flight_code'] ?? '';
+        $personCount = $lastTravelInfo['person_count'] ?? '';
 
         $hotelName = '';
-        if ($travelInfoLast) {
-            if ($travelInfoLast['is_custom_hotel'] && !empty($travelInfoLast['hotel_name'])) {
-                $hotelName = $travelInfoLast['hotel_name'];
-            } else if (isset($travelInfoLast['hotel_id'])) {
-                $hotel = Hotel::find($travelInfoLast['hotel_id']);
-                $hotelName = $hotel ? $hotel->name : '';
-            }
+        if (!empty($lastTravelInfo['is_custom_hotel']) && !empty($lastTravelInfo['hotel_name'])) {
+            $hotelName = $lastTravelInfo['hotel_name'];
+        } else if (isset($lastTravelInfo['hotel_id'])) {
+            $hotel = Hotel::find($lastTravelInfo['hotel_id']);
+            $hotelName = $hotel ? $hotel->name : '';
         }
 
         if ($arrivalDate) {
@@ -1664,15 +2033,29 @@ class CustomerController extends Controller
 
         $message = str_replace(array_keys($replacements), array_values($replacements), $messageTemplate);
 
+        $request = [
+            'chatId' => $transfer->chat_id,
+            'text' => $message,
+            'session' => $adminSession->title
+        ];
+
         try {
-            Http::withHeaders([
+            $response = Http::withHeaders([
                 'X-Api-Key' => $settings->whatsapp_settings['api_key']
-            ])->post($settings->whatsapp_settings['api_url'] . '/sendText', [
-                'chatId' => $transfer->chat_id,
-                'text' => $message,
-                'session' => $adminSession->title
-            ]);
+            ])->post($settings->whatsapp_settings['api_url'] . '/sendText', $request);
+
+            $this->recordNotification($customer, $type, $variant, $response->successful() ? 'success' : 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'response_status' => $response->status(),
+                'response_body' => $response->body(),
+            ], $context);
         } catch (\Exception $e) {
+            $this->recordNotification($customer, $type, $variant, 'failed', [
+                'channel' => 'whatsapp',
+                'request' => $request,
+                'error' => $e->getMessage(),
+            ], $context);
         }
     }
 

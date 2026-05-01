@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerFileController;
+use App\Http\Controllers\CustomerNotificationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DoctorController;
 use App\Http\Controllers\FacebookLeadController;
@@ -103,6 +104,11 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/', 'store');
             Route::put('/{customerFile}', 'update');
             Route::delete('/{customerFile}', 'destroy');
+        });
+
+        Route::prefix('/{customer}/notification')->controller(CustomerNotificationController::class)->group(function () {
+            Route::get('/', 'index');
+            Route::post('/trigger', 'trigger');
         });
     });
 
