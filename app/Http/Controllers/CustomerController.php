@@ -18,7 +18,6 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use libphonenumber\PhoneNumberFormat;
 use libphonenumber\PhoneNumberUtil;
 use Symfony\Component\Mailer\Mailer;
@@ -1524,36 +1523,17 @@ class CustomerController extends Controller
 
     private function sendSalesNotification(Customer $customer)
     {
-        $logCtx = [
-            'customer_id' => $customer->id ?? null,
-            'organization_id' => $customer->organization_id ?? null,
-            'status_id' => $customer->status_id ?? null,
-        ];
-
-        Log::info('sendSalesNotification: started', $logCtx);
-
         $settings = Setting::where('organization_id', $customer->organization_id)->first();
-        if (!$settings) {
-            Log::warning('sendSalesNotification: skipped — Setting row not found for organization', $logCtx);
-            return;
-        }
-        if (empty($settings->sales_notification_settings)) {
-            Log::warning('sendSalesNotification: skipped — sales_notification_settings is empty', $logCtx);
-            return;
-        }
-        if (!$settings->sales_notification_settings['status']) {
-            Log::warning('sendSalesNotification: skipped — sales_notification_settings.status is disabled', $logCtx + ['notification_settings' => $settings->sales_notification_settings]);
+        if (!$settings || empty($settings->sales_notification_settings) || !$settings->sales_notification_settings['status']) {
             return;
         }
 
         $notificationSettings = $settings->sales_notification_settings;
         if (empty($notificationSettings['chat_id'])) {
-            Log::warning('sendSalesNotification: skipped — chat_id is empty in sales_notification_settings', $logCtx);
             return;
         }
 
         if (empty($settings->whatsapp_settings) || empty($settings->whatsapp_settings['api_url'])) {
-            Log::warning('sendSalesNotification: skipped — whatsapp_settings.api_url is missing', $logCtx);
             return;
         }
 
@@ -1562,12 +1542,6 @@ class CustomerController extends Controller
             ->first();
 
         if (!$adminSession) {
-            Log::warning('sendSalesNotification: skipped — no admin WhatsappSession for organization', $logCtx);
-            return;
-        }
-
-        if (empty($notificationSettings['message_template'])) {
-            Log::warning('sendSalesNotification: skipped — message_template is empty', $logCtx);
             return;
         }
 
@@ -1592,34 +1566,14 @@ class CustomerController extends Controller
         );
 
         try {
-            $response = Http::withHeaders([
+            Http::withHeaders([
                 'X-Api-Key' => $settings->whatsapp_settings['api_key']
             ])->post($settings->whatsapp_settings['api_url'] . '/sendText', [
                 'chatId' => $notificationSettings['chat_id'],
                 'text' => $message,
                 'session' => $adminSession->title
             ]);
-
-            if ($response->successful()) {
-                Log::info('sendSalesNotification: sent successfully', $logCtx + [
-                    'chat_id' => $notificationSettings['chat_id'],
-                    'session' => $adminSession->title,
-                    'status' => $response->status(),
-                ]);
-            } else {
-                Log::error('sendSalesNotification: WhatsApp API returned non-success status', $logCtx + [
-                    'chat_id' => $notificationSettings['chat_id'],
-                    'session' => $adminSession->title,
-                    'status' => $response->status(),
-                    'body' => $response->body(),
-                ]);
-            }
         } catch (\Exception $e) {
-            Log::error('sendSalesNotification: exception while calling WhatsApp API', $logCtx + [
-                'chat_id' => $notificationSettings['chat_id'],
-                'session' => $adminSession->title,
-                'error' => $e->getMessage(),
-            ]);
         }
     }
 
