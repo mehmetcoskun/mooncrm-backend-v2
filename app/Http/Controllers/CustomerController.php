@@ -19,6 +19,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use libphonenumber\PhoneNumberFormat;
 use libphonenumber\PhoneNumberUtil;
 use Symfony\Component\Mailer\Mailer;
@@ -87,7 +88,7 @@ class CustomerController extends Controller
             ->offset($first)
             ->limit($rows)
             ->get()
-            ->load('organization', 'user', 'category', 'services', 'status');
+            ->load('organization', 'user', 'category', 'services', 'status', 'referredBy');
 
         return response()->json([
             'data' => $customers,
@@ -184,7 +185,60 @@ class CustomerController extends Controller
             return response()->json(['message' => 'Bu müşteriye erişim yetkiniz yok.'], 403);
         }
 
-        return response()->json($customer->load('organization', 'user', 'category', 'services', 'status'));
+        return response()->json($customer->load('organization', 'user', 'category', 'services', 'status', 'referredBy'));
+    }
+
+    public function referrals(Request $request, Customer $customer)
+    {
+        if (Gate::none(['customer_ReferralAccess']))
+            return response()->json(['message' => 'Unauthorized'], 403);
+
+        $organizationId = auth()->user()->organization_id ?? $request->header('X-Organization-Id');
+
+        if ((int) $customer->organization_id !== (int) $organizationId) {
+            return response()->json(['message' => 'Bu müşteriye erişim yetkiniz yok.'], 403);
+        }
+
+        $referrals = $customer->referrals()
+            ->with(['user', 'status'])
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json($referrals);
+    }
+
+    public function generateReferralToken(Request $request, Customer $customer)
+    {
+        if (Gate::none(['customer_ReferralManage']))
+            return response()->json(['message' => 'Unauthorized'], 403);
+
+        $organizationId = auth()->user()->organization_id ?? $request->header('X-Organization-Id');
+
+        if ((int) $customer->organization_id !== (int) $organizationId) {
+            return response()->json(['message' => 'Bu müşteriye erişim yetkiniz yok.'], 403);
+        }
+
+        $customer->referral_token = (string) Str::uuid();
+        $customer->save();
+
+        return response()->json(['referral_token' => $customer->referral_token]);
+    }
+
+    public function deleteReferralToken(Request $request, Customer $customer)
+    {
+        if (Gate::none(['customer_ReferralManage']))
+            return response()->json(['message' => 'Unauthorized'], 403);
+
+        $organizationId = auth()->user()->organization_id ?? $request->header('X-Organization-Id');
+
+        if ((int) $customer->organization_id !== (int) $organizationId) {
+            return response()->json(['message' => 'Bu müşteriye erişim yetkiniz yok.'], 403);
+        }
+
+        $customer->referral_token = null;
+        $customer->save();
+
+        return response()->json(['referral_token' => null]);
     }
 
     public function update(Request $request, Customer $customer)
@@ -595,6 +649,11 @@ class CustomerController extends Controller
 
             $existingCustomer->duplicate_count = ($existingCustomer->duplicate_count ?? 0) + 1;
             $existingCustomer->created_at = now();
+
+            if (empty($existingCustomer->referred_by_customer_id) && !empty($data['referred_by_customer_id'])) {
+                $existingCustomer->referred_by_customer_id = $data['referred_by_customer_id'];
+            }
+
             $existingCustomer->save();
 
             if ($existingCustomer->user_id) {
@@ -619,7 +678,7 @@ class CustomerController extends Controller
             }
         }
 
-        if (!empty($data['category_id'])) {
+        if (!empty($data['category_id']) && empty($data['user_id'])) {
             $category = Category::find($data['category_id']);
             if ($category) {
                 $categoryIds = [$category->id];

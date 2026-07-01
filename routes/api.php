@@ -13,6 +13,7 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\EmailTemplateController;
 use App\Http\Controllers\PermissionController;
+use App\Http\Controllers\ReferralController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SegmentController;
@@ -52,6 +53,11 @@ Route::prefix('/web-form')->controller(WebFormController::class)->group(function
         Route::get('/{uuid}', 'iframe');
         Route::post('/{uuid}', 'submit');
     });
+});
+
+Route::prefix('/referral')->controller(ReferralController::class)->group(function () {
+    Route::get('/{token}', 'show');
+    Route::post('/{token}', 'submit');
 });
 
 Route::post('/vapi/webhook', [VapiController::class, 'webhook']);
@@ -97,6 +103,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{customer}', 'destroy');
         Route::get('/segment-filter/{segment}', 'segmentFilter');
         Route::get('/logs/{customer}', 'logs');
+        Route::get('/{customer}/referrals', 'referrals');
+        Route::post('/{customer}/referral-token', 'generateReferralToken');
+        Route::delete('/{customer}/referral-token', 'deleteReferralToken');
         Route::post('/webhook', 'webhook');
 
         Route::prefix('/{customer}/file')->controller(CustomerFileController::class)->group(function () {

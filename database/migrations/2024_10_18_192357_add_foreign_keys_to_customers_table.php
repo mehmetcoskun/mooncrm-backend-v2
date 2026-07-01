@@ -15,11 +15,13 @@ return new class extends Migration {
             $table->unsignedBigInteger('user_id')->nullable()->after('organization_id');
             $table->unsignedBigInteger('category_id')->nullable()->after('user_id');
             $table->unsignedBigInteger('status_id')->nullable()->after('category_id');
+            $table->unsignedBigInteger('referred_by_customer_id')->nullable()->after('status_id');
 
             $table->foreign('organization_id')->references('id')->on('organizations')->cascadeOnDelete();
             $table->foreign('user_id')->references('id')->on('users')->nullOnDelete();
             $table->foreign('category_id')->references('id')->on('categories')->nullOnDelete();
             $table->foreign('status_id')->references('id')->on('statuses')->nullOnDelete();
+            $table->foreign('referred_by_customer_id')->references('id')->on('customers')->nullOnDelete();
         });
     }
 
@@ -33,7 +35,8 @@ return new class extends Migration {
             $table->dropForeign(['user_id']);
             $table->dropForeign(['category_id']);
             $table->dropForeign(['status_id']);
-            $table->dropColumn(['organization_id', 'user_id', 'category_id', 'status_id']);
+            $table->dropForeign(['referred_by_customer_id']);
+            $table->dropColumn(['organization_id', 'user_id', 'category_id', 'status_id', 'referred_by_customer_id']);
         });
     }
 };

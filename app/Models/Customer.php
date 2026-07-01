@@ -27,6 +27,8 @@ class Customer extends Model
         'adset_name',
         'campaign_name',
         'lead_form_id',
+        'referral_token',
+        'referred_by_customer_id',
         'created_at',
     ];
 
@@ -41,6 +43,16 @@ class Customer extends Model
     public function organization()
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    public function referredBy()
+    {
+        return $this->belongsTo(Customer::class, 'referred_by_customer_id');
+    }
+
+    public function referrals()
+    {
+        return $this->hasMany(Customer::class, 'referred_by_customer_id');
     }
 
     public function user()

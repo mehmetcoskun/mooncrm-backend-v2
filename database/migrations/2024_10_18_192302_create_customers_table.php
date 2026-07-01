@@ -28,6 +28,7 @@ return new class extends Migration {
             $table->string('adset_name')->nullable();
             $table->string('campaign_name')->nullable();
             $table->string('lead_form_id')->nullable();
+            $table->string('referral_token')->nullable()->unique();
             $table->timestamps();
         });
     }

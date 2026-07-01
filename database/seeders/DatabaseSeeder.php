@@ -47,6 +47,8 @@ class DatabaseSeeder extends Seeder
             ['title' => 'Müşteri', 'slug' => 'customer_FileUpload', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Müşteri', 'slug' => 'customer_FileDelete', 'is_custom' => false, 'is_global' => true],
             ['title' => 'Müşteri', 'slug' => 'customer_NotificationAccess', 'is_custom' => false, 'is_global' => true],
+            ['title' => 'Müşteri', 'slug' => 'customer_ReferralAccess', 'is_custom' => false, 'is_global' => true],
+            ['title' => 'Müşteri', 'slug' => 'customer_ReferralManage', 'is_custom' => false, 'is_global' => true],
 
             // WhatsApp Sohbet
             ['title' => 'WhatsApp Sohbet', 'slug' => 'whatsapp_chat_Access', 'is_custom' => false, 'is_global' => true],
