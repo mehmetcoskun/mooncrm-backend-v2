@@ -61,15 +61,25 @@ class CustomerFileController extends Controller
             if (!is_array($files)) {
                 $files = [$files];
             }
-            
+
+            $titles = $request->input('titles', []);
+
+            if (!is_array($titles)) {
+                $titles = [$titles];
+            }
+
             $uploadedFiles = [];
 
-            foreach ($files as $file) {
+            foreach ($files as $index => $file) {
                 if (!$file || $file->getSize() > self::MAX_FILE_SIZE) {
                     continue;
                 }
 
-                $extension = $file->getClientOriginalExtension();
+                $originalName = $titles[$index] ?? $file->getClientOriginalName();
+
+                $extension = pathinfo($originalName, PATHINFO_EXTENSION)
+                    ?: $file->getClientOriginalExtension();
+
                 $key = 'customers/' . $customer->id . '_' . Str::uuid() . '.' . $extension;
 
                 $s3Client->putObject([
@@ -81,7 +91,7 @@ class CustomerFileController extends Controller
 
                 $customerFile = CustomerFile::create([
                     'customer_id' => $customer->id,
-                    'title' => $file->getClientOriginalName(),
+                    'title' => $originalName,
                     'key' => $key,
                 ]);
 
