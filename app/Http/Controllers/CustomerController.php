@@ -697,16 +697,27 @@ class CustomerController extends Controller
                     ->with([
                         'users' => function ($query) {
                             $query->orderBy('id');
-                        }
+                        },
+                        'categories:id'
                     ])
                     ->get();
 
-                foreach ($tags as $tag) {
-                    if ($tag->users->isEmpty()) {
+                // En yakın kategorinin etiketi önce gelsin: alt kategori > üst kategori > kök
+                $categoryOrder = array_flip($categoryIds);
+                $tags = $tags->sortBy(function ($candidateTag) use ($categoryOrder) {
+                    $depth = $candidateTag->categories
+                        ->pluck('id')
+                        ->map(fn ($id) => $categoryOrder[$id] ?? PHP_INT_MAX)
+                        ->min();
+                    return [$depth ?? PHP_INT_MAX, $candidateTag->id];
+                })->values();
+
+                foreach ($tags as $candidateTag) {
+                    if ($candidateTag->users->isEmpty()) {
                         continue;
                     }
 
-                    $activeUsers = $tag->users->filter(function ($user) {
+                    $activeUsers = $candidateTag->users->filter(function ($user) {
                         $workSchedule = $user->work_schedule;
                         if (!$workSchedule || !isset($workSchedule['is_active'])) {
                             return true;
@@ -717,6 +728,8 @@ class CustomerController extends Controller
                     if ($activeUsers->isEmpty()) {
                         continue;
                     }
+
+                    $tag = $candidateTag;
 
                     $filteredUsers = $customerLanguage
                         ? $activeUsers->filter(function ($user) use ($customerLanguage) {
