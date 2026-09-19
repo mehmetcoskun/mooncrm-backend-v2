@@ -416,6 +416,8 @@ class FacebookLeadController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
 
         $organizationId = auth()->user()->organization_id ?? $request->header('X-Organization-Id');
+        $fbT = microtime(true); // [FB-DEBUG]
+        \Log::info('[FB-DEBUG] sendToCrm basladi', ['user_id' => auth()->id(), 'organization_id' => $organizationId, 'payload' => $request->all()]); // [FB-DEBUG]
 
         $formId = $request->input('form_id');
         $fieldData = $request->input('field_data', []);
@@ -424,6 +426,7 @@ class FacebookLeadController extends Controller
         $campaignName = $request->input('campaign_name');
 
         if (!$formId) {
+            \Log::warning('[FB-DEBUG] sendToCrm form_id yok'); // [FB-DEBUG]
             return response()->json(['message' => 'Form ID gereklidir.'], 400);
         }
 
@@ -432,6 +435,7 @@ class FacebookLeadController extends Controller
             ->first();
 
         if (!$category) {
+            \Log::warning('[FB-DEBUG] sendToCrm kategori bulunamadi', ['form_id' => $formId, 'organization_id' => $organizationId, 'ayni_form_diger_org' => Category::where('lead_form_id', $formId)->pluck('organization_id', 'id')->all()]); // [FB-DEBUG]
             return response()->json(['message' => 'Bu form için kategori bulunamadı.'], 404);
         }
 
@@ -446,6 +450,7 @@ class FacebookLeadController extends Controller
 
         $fieldMappings = $category->field_mappings ?? [];
         $fieldDataCollection = collect($fieldData);
+        \Log::info('[FB-DEBUG] sendToCrm kategori bulundu', ['category_id' => $category->id, 'title' => $category->title, 'parent_id' => $category->parent_id, 'channel' => $category->channel, 'field_mappings' => $fieldMappings, 'gelen_field_keys' => $fieldDataCollection->keys()->all()]); // [FB-DEBUG]
 
         foreach ($fieldMappings as $mapping) {
             $fieldKey = $mapping['field_key'] ?? null;
@@ -477,10 +482,13 @@ class FacebookLeadController extends Controller
             $customerData[$mapTo] = $fieldValue;
         }
 
+        \Log::info('[FB-DEBUG] sendToCrm customerData hazir, handleCustomerEntry cagriliyor', ['customerData' => $customerData, 'ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
         try {
             app(CustomerController::class)->handleCustomerEntry($customerData);
+            \Log::info('[FB-DEBUG] sendToCrm bitti', ['ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
             return response()->json(['message' => 'Lead başarıyla CRM\'e aktarıldı.']);
         } catch (\Throwable $exception) {
+            \Log::error('[FB-DEBUG] sendToCrm HATA', ['hata' => $exception->getMessage(), 'dosya' => $exception->getFile() . ':' . $exception->getLine(), 'ms' => round((microtime(true) - $fbT) * 1000), 'trace' => $exception->getTraceAsString()]); // [FB-DEBUG]
             return response()->json(['message' => 'Lead aktarılırken hata oluştu: ' . $exception->getMessage()], 500);
         }
     }
