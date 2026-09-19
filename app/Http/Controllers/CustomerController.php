@@ -618,8 +618,6 @@ class CustomerController extends Controller
     public function handleCustomerEntry($data)
     {
         $organizationId = $data['organization_id'];
-        $fbT = microtime(true); // [FB-DEBUG]
-        \Log::info('[FB-DEBUG] handleCustomerEntry basladi', ['data' => $data]); // [FB-DEBUG]
 
         if (!empty($data['phone'])) {
             try {
@@ -627,7 +625,6 @@ class CustomerController extends Controller
                 $phoneNumber = $phoneUtil->parse($data['phone']);
                 $data['country'] = $phoneUtil->getRegionCodeForNumber($phoneNumber);
             } catch (\Exception $e) {
-                \Log::warning('[FB-DEBUG] telefon parse edilemedi', ['phone' => $data['phone'], 'hata' => $e->getMessage()]); // [FB-DEBUG]
             }
         }
 
@@ -643,10 +640,8 @@ class CustomerController extends Controller
                 ->first();
         }
 
-        \Log::info('[FB-DEBUG] mukerrer kontrolu', ['email' => $data['email'] ?? null, 'phone' => $data['phone'] ?? null, 'existing_customer_id' => $existingCustomer?->id, 'existing_status_id' => $existingCustomer?->status_id, 'existing_user_id' => $existingCustomer?->user_id, 'ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
         if ($existingCustomer) {
             if ($existingCustomer->status_id === 11) {
-                \Log::warning('[FB-DEBUG] musteri engelli (status 11), cikiliyor', ['customer_id' => $existingCustomer->id]); // [FB-DEBUG]
                 return response()->json([
                     'message' => 'Bu müşteri engellenmiştir.',
                 ], 200);
@@ -660,17 +655,12 @@ class CustomerController extends Controller
             }
 
             $existingCustomer->save();
-            \Log::info('[FB-DEBUG] mukerrer musteri guncellendi', ['customer_id' => $existingCustomer->id, 'duplicate_count' => $existingCustomer->duplicate_count, 'ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
 
             if ($existingCustomer->user_id) {
-                \Log::info('[FB-DEBUG] (mukerrer) sendCustomerMessages basliyor', ['ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
                 $this->sendCustomerMessages($existingCustomer);
-                \Log::info('[FB-DEBUG] (mukerrer) sendUserNotification basliyor', ['ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
                 $this->sendUserNotification($existingCustomer);
             }
-            \Log::info('[FB-DEBUG] (mukerrer) sendGroupNotification basliyor', ['ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
             $this->sendGroupNotification($existingCustomer);
-            \Log::info('[FB-DEBUG] handleCustomerEntry bitti (mukerrer)', ['customer_id' => $existingCustomer->id, 'bildirimler' => CustomerNotification::where('customer_id', $existingCustomer->id)->where('created_at', '>=', now()->subMinutes(2))->get(['type', 'variant', 'status', 'skip_reason', 'error', 'response_status'])->toArray(), 'ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
 
             return $existingCustomer->load('organization', 'user', 'category', 'services', 'status');
         }
@@ -693,9 +683,7 @@ class CustomerController extends Controller
             if ($category) {
                 $categoryIds = [$category->id];
                 $parentCategory = $category;
-                $fbLoop = 0; // [FB-DEBUG]
                 while ($parentCategory->parent_id) {
-                    if (++$fbLoop % 25 === 0) \Log::warning('[FB-DEBUG] ust kategori dongusu cok uzadi - DONGUSEL parent_id olabilir', ['tur' => $fbLoop, 'su_anki_id' => $parentCategory->id, 'parent_id' => $parentCategory->parent_id]); // [FB-DEBUG]
                     $parentCategory = Category::find($parentCategory->parent_id);
                     if ($parentCategory) {
                         $categoryIds[] = $parentCategory->id;
@@ -713,7 +701,6 @@ class CustomerController extends Controller
                         'categories:id'
                     ])
                     ->get();
-                \Log::info('[FB-DEBUG] kategori zinciri ve etiketler', ['categoryIds' => $categoryIds, 'tags' => $tags->map(fn ($t) => ['id' => $t->id, 'user_ids' => $t->users->pluck('id')->all()])->all(), 'customerLanguage' => $customerLanguage, 'ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
 
                 // En yakın kategorinin etiketi önce gelsin: alt kategori > üst kategori > kök
                 $categoryOrder = array_flip($categoryIds);
@@ -782,10 +769,8 @@ class CustomerController extends Controller
             }
         }
 
-        \Log::info('[FB-DEBUG] etiket atamasi sonucu', ['tag_id' => $tag?->id, 'user_id' => $data['user_id'] ?? null, 'ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
         if (empty($data['user_id'])) {
             $settings = Setting::where('organization_id', $organizationId)->first();
-            \Log::info('[FB-DEBUG] genel atama stratejisine dusuldu', ['strategy' => $settings?->lead_assignment_settings['strategy'] ?? null]); // [FB-DEBUG]
 
             if ($settings && !empty($settings->lead_assignment_settings)) {
                 $assignmentSettings = $settings->lead_assignment_settings;
@@ -910,20 +895,14 @@ class CustomerController extends Controller
             }
         }
 
-        \Log::info('[FB-DEBUG] Customer::create cagriliyor', ['data' => $data, 'ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
         $customer = Customer::create($data);
-        \Log::info('[FB-DEBUG] musteri olusturuldu', ['customer_id' => $customer->id, 'user_id' => $customer->user_id, 'ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
         $customer->load('organization', 'user', 'category', 'services', 'status');
 
         if ($customer->user_id) {
-            \Log::info('[FB-DEBUG] sendCustomerMessages basliyor', ['channel' => $category?->channel, 'tag_id' => $tag?->id, 'ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
             $this->sendCustomerMessages($customer, $category, $tag);
-            \Log::info('[FB-DEBUG] sendUserNotification basliyor', ['ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
             $this->sendUserNotification($customer);
         }
-        \Log::info('[FB-DEBUG] sendGroupNotification basliyor', ['ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
         $this->sendGroupNotification($customer);
-        \Log::info('[FB-DEBUG] handleCustomerEntry bitti', ['customer_id' => $customer->id, 'bildirimler' => CustomerNotification::where('customer_id', $customer->id)->get(['type', 'variant', 'status', 'skip_reason', 'error', 'response_status'])->toArray(), 'ms' => round((microtime(true) - $fbT) * 1000)]); // [FB-DEBUG]
 
         return $customer;
     }
